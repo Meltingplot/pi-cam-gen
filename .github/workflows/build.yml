@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
 
+    permissions:
+      contents: write  # needed to publish a GitHub Release on tag pushes
+
     env:
       IMG_NAME: meltingplot-pi-cam
       RELEASE: trixie
@@ -118,3 +121,118 @@ jobs:
           name: ${{ steps.copies.outputs.base }}-zero2w
           path: artifacts/*-zero2w.img.xz*
           if-no-files-found: error
+
+      # ---- Release publishing (tag pushes only) ----------------------------
+
+      - name: Compute sizes and SHAs for the Imager catalog
+        id: catalog
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          # All three model copies are byte-identical, so compute on one
+          img="$(ls artifacts/*-rpi4.img.xz | head -n1)"
+          extract_size="$(xz --robot --list "$img" | awk '/^totals/ {print $5}')"
+          extract_sha256="$(xz -dc "$img" | sha256sum | awk '{print $1}')"
+          download_size="$(stat -c%s "$img")"
+          download_sha256="$(sha256sum "$img" | awk '{print $1}')"
+          {
+            echo "extract_size=$extract_size"
+            echo "extract_sha256=$extract_sha256"
+            echo "download_size=$download_size"
+            echo "download_sha256=$download_sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate os_list.json (Imager v4 catalog)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          BASE: ${{ steps.copies.outputs.base }}
+          EXTRACT_SIZE: ${{ steps.catalog.outputs.extract_size }}
+          EXTRACT_SHA256: ${{ steps.catalog.outputs.extract_sha256 }}
+          DOWNLOAD_SIZE: ${{ steps.catalog.outputs.download_size }}
+          DOWNLOAD_SHA256: ${{ steps.catalog.outputs.download_sha256 }}
+        run: |
+          set -euo pipefail
+          release_date="$(date -u +%Y-%m-%d)"
+          # Pin URLs inside the catalog to this tag so a downloaded
+          # catalog cannot reference assets that disappear under it.
+          # The catalog itself is published at the same tag and also
+          # reachable via releases/latest/download/os_list.json.
+          repo_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          export RELEASE_DATE="$release_date"
+          export REPO_URL="$repo_url"
+          python3 - <<'PY' > artifacts/os_list.json
+          import json, os
+          version       = os.environ["VERSION"]
+          base          = os.environ["BASE"]
+          ext_size      = int(os.environ["EXTRACT_SIZE"])
+          ext_sha       = os.environ["EXTRACT_SHA256"]
+          dl_size       = int(os.environ["DOWNLOAD_SIZE"])
+          dl_sha        = os.environ["DOWNLOAD_SHA256"]
+          release_date  = os.environ["RELEASE_DATE"]
+          repo_url      = os.environ["REPO_URL"]
+
+          def subitem(model_label, model_slug, devices, chip_note):
+              return {
+                  "name": f"Meltingplot Pi Camera ({model_label})",
+                  "description": f"Headless meltingplot.rpi_camera image for {model_label} ({chip_note}). Version {version}.",
+                  "url": f"{repo_url}/{base}-{model_slug}.img.xz",
+                  "extract_size": ext_size,
+                  "extract_sha256": ext_sha,
+                  "image_download_size": dl_size,
+                  "image_download_sha256": dl_sha,
+                  "release_date": release_date,
+                  "init_format": "cloudinit-rpi",
+                  "devices": devices,
+              }
+
+          catalog = {
+              "os_list": [
+                  {
+                      "name": "Meltingplot Pi Camera",
+                      "description": (
+                          "Headless Raspberry Pi camera image bundling Debian trixie, "
+                          "the Raspberry Pi v8 kernel and meltingplot.rpi_camera "
+                          f"(image version {version})."
+                      ),
+                      "subitems": [
+                          subitem("Pi 5",        "rpi5",   ["pi5-64bit"], "BCM2712"),
+                          subitem("Pi 4",        "rpi4",   ["pi4-64bit"], "BCM2711"),
+                          subitem("Pi Zero 2W",  "zero2w", ["pi3-64bit"], "BCM2710A1, shares the Pi 3 device class"),
+                      ],
+                  }
+              ]
+          }
+          print(json.dumps(catalog, indent=2))
+          PY
+          cat artifacts/os_list.json
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.img.xz
+            artifacts/*.img.xz.sha256
+            artifacts/os_list.json
+          generate_release_notes: true
+          body: |
+            ## Image version
+
+            `${{ steps.ver.outputs.version }}`
+
+            ## Use with Raspberry Pi Imager
+
+            Launch Imager with this repository's catalog so customization
+            (WiFi, SSH, user, hostname, locale) is available in the wizard:
+
+            ```
+            rpi-imager --repo https://github.com/${{ github.repository }}/releases/latest/download/os_list.json
+            ```
+
+            Then pick **Meltingplot Pi Camera** and choose the entry that
+            matches your board.
+
+            (Picking the `.img.xz` file directly via "Use Custom" works for
+            flashing but disables Imager's customization wizard - that is
+            a deliberate behaviour of Imager, not a property of the image.)
