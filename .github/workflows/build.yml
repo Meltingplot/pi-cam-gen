@@ -10,8 +10,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
 
     env:
       IMG_NAME: meltingplot-pi-cam
@@ -31,16 +31,6 @@ jobs:
                       "$AGENT_TOOLSDIRECTORY"
           sudo docker system prune -af || true
           df -h
-
-      - name: Install qemu-user-binfmt on the runner
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            qemu-user-static qemu-user-binfmt binfmt-support
-          sudo update-binfmts --enable
-          # Sanity-check what build-docker.sh expects
-          which qemu-aarch64
-          qemu-aarch64 --version | head -n1
 
       - name: Write pi-gen config
         run: |
