@@ -29,11 +29,16 @@ jobs:
 
       - name: Install pi-gen build dependencies
         run: |
+          set -euo pipefail
+          # Derive the package list from pi-gen's depends file so this
+          # step stays correct across branches (e.g. bookworm wants
+          # qemu-user-static, trixie wants qemu-user-binfmt).
+          PACKAGES="$(sed -f scripts/remove-comments.sed depends \
+            | tr -s '[:space:]' '\n' \
+            | awk -F: 'NF { print $NF }' \
+            | sort -u | tr '\n' ' ')"
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \
-            dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils \
-            file git curl bc gpg pigz xxd arch-test bmap-tools kmod
+          sudo apt-get install -y --no-install-recommends $PACKAGES bmap-tools
 
       - name: Write pi-gen config
         run: |
