@@ -53,7 +53,10 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
-          rootfs="work/${IMG_NAME}/export-image/rootfs"
+          # Use the source rootfs (stage2), not work/.../export-image/rootfs
+          # which is the image's loop mount and is empty after build.sh's
+          # exit trap unmounts it.
+          rootfs="work/${IMG_NAME}/stage2/rootfs"
           # Debian major release (e.g. 13 for trixie)
           debian="$(. "$rootfs/etc/os-release" && echo "$VERSION_ID")"
           # Kernel package version; strip epoch ("1:") and swap '+' for '-' so it's filename-safe
