@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \
+            coreutils quilt parted qemu-user-static debootstrap zerofree zip \
             dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils \
             file git curl bc gpg pigz xxd arch-test bmap-tools kmod
 
