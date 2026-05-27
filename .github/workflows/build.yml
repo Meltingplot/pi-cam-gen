@@ -46,16 +46,46 @@ jobs:
       - name: Build image with pi-gen
         run: sudo ./build.sh
 
-      - name: Fix deploy/ ownership
-        run: sudo chown -R "$(id -u):$(id -g)" deploy/
+      - name: Fix deploy/ and work/ ownership
+        run: sudo chown -R "$(id -u):$(id -g)" deploy/ work/
+
+      - name: Compute image version (debian-kernel-cam)
+        id: ver
+        run: |
+          set -euo pipefail
+          rootfs="work/${IMG_NAME}/export-image/rootfs"
+          # Debian major release (e.g. 13 for trixie)
+          debian="$(. "$rootfs/etc/os-release" && echo "$VERSION_ID")"
+          # Kernel package version; strip epoch ("1:") and swap '+' for '-' so it's filename-safe
+          kernel_raw="$(awk '/^Package: linux-image-rpi-v8$/,/^$/ { if (/^Version: /) { print $2; exit } }' \
+            "$rootfs/var/lib/dpkg/status")"
+          [ -n "$kernel_raw" ] || { echo "linux-image-rpi-v8 not found in rootfs dpkg status" >&2; exit 1; }
+          kernel="$(echo "$kernel_raw" | sed -e 's/^[0-9]*://' -e 's/+/-/g')"
+          # rpi-camera pin (tracked in repo, kept in sync by check-rpi-camera-version.yml)
+          cam="$(cat stage2/05-rpi-camera/files/rpi-camera-version)"
+          version="${debian}-${kernel}-${cam}"
+          echo "Image version: $version (debian=$debian kernel=$kernel cam=$cam)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Image version"
+            echo ""
+            echo "| component | value |"
+            echo "| --- | --- |"
+            echo "| debian | \`$debian\` |"
+            echo "| kernel (linux-image-rpi-v8) | \`$kernel\` (raw: \`$kernel_raw\`) |"
+            echo "| meltingplot.rpi_camera | \`$cam\` |"
+            echo "| **combined** | \`$version\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Produce per-model copies (rpi4, rpi5, zero2w)
         id: copies
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           src="$(ls deploy/*-lite.img.xz | head -n1)"
-          base="$(basename "$src" -lite.img.xz)"
-          echo "Found built image: $src (base=$base)"
+          base="${IMG_NAME}-${VERSION}"
+          echo "Renaming $src -> ${base}-{rpi4,rpi5,zero2w}.img.xz"
           mkdir -p artifacts
           for model in rpi4 rpi5 zero2w; do
             out="artifacts/${base}-${model}.img.xz"
