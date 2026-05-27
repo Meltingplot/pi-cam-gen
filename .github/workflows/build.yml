@@ -24,20 +24,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Free disk space on runner
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
-                      "$AGENT_TOOLSDIRECTORY"
-          df -h
-
       - name: Install pi-gen build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \
             dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils \
-            file git curl bc gpg pigz xxd arch-test bmap-tools kmod fdisk
+            file git curl bc gpg pigz xxd arch-test bmap-tools kmod
 
       - name: Write pi-gen config
         run: |
@@ -56,45 +49,39 @@ jobs:
       - name: Fix deploy/ ownership
         run: sudo chown -R "$(id -u):$(id -g)" deploy/
 
-      - name: Locate built image
-        id: img
-        run: |
-          set -euo pipefail
-          src="$(ls deploy/*-lite.img.xz | head -n1)"
-          echo "Found built image: $src"
-          echo "src=$src" >> "$GITHUB_OUTPUT"
-          echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-
       - name: Produce per-model copies (rpi4, rpi5, zero2w)
         id: copies
         run: |
           set -euo pipefail
+          src="$(ls deploy/*-lite.img.xz | head -n1)"
+          base="$(basename "$src" -lite.img.xz)"
+          echo "Found built image: $src (base=$base)"
           mkdir -p artifacts
-          base="${{ steps.img.outputs.date }}-${IMG_NAME}"
           for model in rpi4 rpi5 zero2w; do
             out="artifacts/${base}-${model}.img.xz"
-            cp -v "${{ steps.img.outputs.src }}" "$out"
+            cp -v "$src" "$out"
             sha256sum "$out" > "${out}.sha256"
           done
           ls -lah artifacts/
+          echo "base=$base" >> "$GITHUB_OUTPUT"
 
       - name: Upload rpi4 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.img.outputs.date }}-${{ env.IMG_NAME }}-rpi4
+          name: ${{ steps.copies.outputs.base }}-rpi4
           path: artifacts/*-rpi4.img.xz*
           if-no-files-found: error
 
       - name: Upload rpi5 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.img.outputs.date }}-${{ env.IMG_NAME }}-rpi5
+          name: ${{ steps.copies.outputs.base }}-rpi5
           path: artifacts/*-rpi5.img.xz*
           if-no-files-found: error
 
       - name: Upload zero2w artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.img.outputs.date }}-${{ env.IMG_NAME }}-zero2w
+          name: ${{ steps.copies.outputs.base }}-zero2w
           path: artifacts/*-zero2w.img.xz*
           if-no-files-found: error
