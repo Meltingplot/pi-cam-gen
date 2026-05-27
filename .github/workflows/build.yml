@@ -2,10 +2,10 @@ name: Build pi-cam image
 
 on:
   push:
-    branches: [arm64]
+    branches: [bookworm-arm64]
     tags: ['v*']
   pull_request:
-    branches: [arm64]
+    branches: [bookworm-arm64]
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
 
     env:
       IMG_NAME: meltingplot-pi-cam
-      RELEASE: trixie
+      RELEASE: bookworm
       DEPLOY_COMPRESSION: xz
       COMPRESSION_LEVEL: 6
       ENABLE_SSH: "0"
@@ -181,7 +181,7 @@ jobs:
                   "image_download_size": dl_size,
                   "image_download_sha256": dl_sha,
                   "release_date": release_date,
-                  "init_format": "cloudinit-rpi",
+                  "init_format": "systemd",
                   "devices": devices,
               }
 
@@ -190,7 +190,7 @@ jobs:
                   {
                       "name": "Meltingplot Pi Camera",
                       "description": (
-                          "Headless Raspberry Pi camera image bundling Debian trixie, "
+                          "Headless Raspberry Pi camera image bundling Debian bookworm, "
                           "the Raspberry Pi v8 kernel and meltingplot.rpi_camera "
                           f"(image version {version})."
                       ),
