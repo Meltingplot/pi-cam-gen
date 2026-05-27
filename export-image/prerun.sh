@@ -62,7 +62,13 @@ else
 	FAT_SIZE=32
 fi
 
-mkdosfs -n bootfs -F "$FAT_SIZE" -s 1 -v "$BOOT_DEV" > /dev/null
+# mkdosfs cluster size: 4 sectors (2 KB clusters). Upstream pi-gen
+# briefly switched to -s 1 (512-byte clusters), which on a 512 MB bootfs
+# blows the FAT up to ~4 MB and breaks the Pi 0/3-family start.elf
+# kernel-search path - the Pi Zero 2 W fails with "kernel image not
+# found" even though kernel8.img is on the partition. Pi 4/5 firmware
+# is unaffected. Keeping the historical -s 4 here.
+mkdosfs -n bootfs -F "$FAT_SIZE" -s 4 -v "$BOOT_DEV" > /dev/null
 mkfs.ext4 -L rootfs -O "$ROOT_FEATURES" "$ROOT_DEV" > /dev/null
 
 mount -v "$ROOT_DEV" "${ROOTFS_DIR}" -t ext4
