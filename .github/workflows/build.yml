@@ -52,33 +52,34 @@ jobs:
       - name: Fix deploy/ and work/ ownership
         run: sudo chown -R "$(id -u):$(id -g)" deploy/ work/
 
-      - name: Compute image version (debian-kernel-cam)
+      - name: Compute image version ({codename}-{date}-{cam})
         id: ver
         run: |
           set -euo pipefail
-          # Use the source rootfs (stage2), not work/.../export-image/rootfs
-          # which is the image's loop mount and is empty after build.sh's
-          # exit trap unmounts it.
+          # Match the Raspberry Pi OS naming convention: codename + release date.
+          # The source rootfs (stage2) is the durable copy of the rootfs;
+          # work/.../export-image/rootfs is a loop mount that build.sh
+          # unmounts on exit.
           rootfs="work/${IMG_NAME}/stage2/rootfs"
-          # Debian major release (e.g. 13 for trixie)
-          debian="$(. "$rootfs/etc/os-release" && echo "$VERSION_ID")"
-          # Kernel package version; strip epoch ("1:") and swap '+' for '-' so it's filename-safe
-          kernel_raw="$(awk '/^Package: linux-image-rpi-v8$/,/^$/ { if (/^Version: /) { print $2; exit } }' \
-            "$rootfs/var/lib/dpkg/status")"
-          [ -n "$kernel_raw" ] || { echo "linux-image-rpi-v8 not found in rootfs dpkg status" >&2; exit 1; }
-          kernel="$(echo "$kernel_raw" | sed -e 's/^[0-9]*://' -e 's/+/-/g')"
-          # rpi-camera pin (tracked in repo, kept in sync by check-rpi-camera-version.yml)
+          codename="$(. "$rootfs/etc/os-release" && echo "$VERSION_CODENAME")"
+          [ -n "$codename" ] || { echo "VERSION_CODENAME not found in os-release" >&2; exit 1; }
+          release_date="$(date -u +%Y-%m-%d)"
           cam="$(cat stage2/05-rpi-camera/files/rpi-camera-version)"
-          version="${debian}-${kernel}-${cam}"
-          echo "Image version: $version (debian=$debian kernel=$kernel cam=$cam)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          version="${codename}-${release_date}-${cam}"
+          echo "Image version: $version"
+          {
+            echo "version=$version"
+            echo "codename=$codename"
+            echo "release_date=$release_date"
+            echo "cam=$cam"
+          } >> "$GITHUB_OUTPUT"
           {
             echo "### Image version"
             echo ""
             echo "| component | value |"
             echo "| --- | --- |"
-            echo "| debian | \`$debian\` |"
-            echo "| kernel (linux-image-rpi-v8) | \`$kernel\` (raw: \`$kernel_raw\`) |"
+            echo "| debian codename | \`$codename\` |"
+            echo "| release date | \`$release_date\` |"
             echo "| meltingplot.rpi_camera | \`$cam\` |"
             echo "| **combined** | \`$version\` |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -147,20 +148,18 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
           BASE: ${{ steps.copies.outputs.base }}
+          RELEASE_DATE: ${{ steps.ver.outputs.release_date }}
           EXTRACT_SIZE: ${{ steps.catalog.outputs.extract_size }}
           EXTRACT_SHA256: ${{ steps.catalog.outputs.extract_sha256 }}
           DOWNLOAD_SIZE: ${{ steps.catalog.outputs.download_size }}
           DOWNLOAD_SHA256: ${{ steps.catalog.outputs.download_sha256 }}
         run: |
           set -euo pipefail
-          release_date="$(date -u +%Y-%m-%d)"
           # Pin URLs inside the catalog to this tag so a downloaded
           # catalog cannot reference assets that disappear under it.
           # The catalog itself is published at the same tag and also
           # reachable via releases/latest/download/os_list.json.
-          repo_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
-          export RELEASE_DATE="$release_date"
-          export REPO_URL="$repo_url"
+          export REPO_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
           python3 - <<'PY' > artifacts/os_list.json
           import json, os
           version       = os.environ["VERSION"]
