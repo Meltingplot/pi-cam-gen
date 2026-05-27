@@ -1,0 +1,98 @@
+name: Build pi-cam image
+
+on:
+  push:
+    branches: [arm64]
+    tags: ['v*']
+  pull_request:
+    branches: [arm64]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      IMG_NAME: meltingplot-pi-cam
+      RELEASE: trixie
+      DEPLOY_COMPRESSION: xz
+      COMPRESSION_LEVEL: 6
+      ENABLE_SSH: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af || true
+          df -h
+
+      - name: Set up QEMU (binfmt for arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Write pi-gen config
+        run: |
+          cat > config <<EOF
+          IMG_NAME='${IMG_NAME}'
+          RELEASE='${RELEASE}'
+          DEPLOY_COMPRESSION='${DEPLOY_COMPRESSION}'
+          COMPRESSION_LEVEL='${COMPRESSION_LEVEL}'
+          ENABLE_SSH='${ENABLE_SSH}'
+          STAGE_LIST='stage0 stage1 stage2'
+          EOF
+
+      - name: Build image with pi-gen (Docker)
+        run: sudo ./build-docker.sh
+
+      - name: Fix deploy/ ownership
+        run: sudo chown -R "$(id -u):$(id -g)" deploy/
+
+      - name: Locate built image
+        id: img
+        run: |
+          set -euo pipefail
+          src="$(ls deploy/*-lite.img.xz | head -n1)"
+          echo "Found built image: $src"
+          echo "src=$src" >> "$GITHUB_OUTPUT"
+          echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Produce per-model copies (rpi4, rpi5, zero2w)
+        id: copies
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          base="${{ steps.img.outputs.date }}-${IMG_NAME}"
+          for model in rpi4 rpi5 zero2w; do
+            out="artifacts/${base}-${model}.img.xz"
+            cp -v "${{ steps.img.outputs.src }}" "$out"
+            sha256sum "$out" > "${out}.sha256"
+          done
+          ls -lah artifacts/
+
+      - name: Upload rpi4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.img.outputs.date }}-${{ env.IMG_NAME }}-rpi4
+          path: artifacts/*-rpi4.img.xz*
+          if-no-files-found: error
+
+      - name: Upload rpi5 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.img.outputs.date }}-${{ env.IMG_NAME }}-rpi5
+          path: artifacts/*-rpi5.img.xz*
+          if-no-files-found: error
+
+      - name: Upload zero2w artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.img.outputs.date }}-${{ env.IMG_NAME }}-zero2w
+          path: artifacts/*-zero2w.img.xz*
+          if-no-files-found: error
