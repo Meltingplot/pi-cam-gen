@@ -1,0 +1,62 @@
+name: Check for rpi-camera release
+
+on:
+  schedule:
+    - cron: '17 * * * *'  # hourly, offset to avoid the on-the-hour rush
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest rpi-camera release tag
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$(gh api /repos/Meltingplot/rpi-camera/releases/latest -q .tag_name)"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Latest rpi-camera release: $tag (pip version: $version)"
+
+      - name: Update tracked version if changed
+        id: diff
+        run: |
+          set -euo pipefail
+          file=stage2/05-rpi-camera/files/rpi-camera-version
+          current="$(cat "$file" 2>/dev/null || true)"
+          new='${{ steps.latest.outputs.version }}'
+          if [ "$current" = "$new" ]; then
+            echo "No change ($current == $new)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Bumping $current -> $new"
+            printf '%s\n' "$new" > "$file"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open PR with version bump
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: auto/bump-rpi-camera
+          base: arm64
+          commit-message: "stage2: bump meltingplot.rpi_camera to ${{ steps.latest.outputs.version }}"
+          title: "stage2: bump meltingplot.rpi_camera to ${{ steps.latest.outputs.version }}"
+          body: |
+            Auto-detected new release [`${{ steps.latest.outputs.tag }}`](https://github.com/Meltingplot/rpi-camera/releases/tag/${{ steps.latest.outputs.tag }}).
+
+            Updates `stage2/05-rpi-camera/files/rpi-camera-version` from the previous pin to `${{ steps.latest.outputs.version }}`. Merging this will trigger a fresh image build on `arm64`.
+          labels: |
+            dependencies
+            auto-bump
+          delete-branch: true

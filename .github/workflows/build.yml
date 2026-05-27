@@ -7,9 +7,6 @@ on:
   pull_request:
     branches: [arm64]
   workflow_dispatch:
-  # Fired by Meltingplot/rpi-camera on a new release, see notify-pi-cam-gen.yml there.
-  repository_dispatch:
-    types: [rpi-camera-released]
 
 jobs:
   build:
