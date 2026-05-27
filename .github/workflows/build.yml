@@ -29,8 +29,15 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
                       "$AGENT_TOOLSDIRECTORY"
-          sudo docker system prune -af || true
           df -h
+
+      - name: Install pi-gen build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip \
+            dosfstools e2fsprogs libarchive-tools libcap2-bin grep rsync xz-utils \
+            file git curl bc gpg pigz xxd arch-test bmap-tools kmod fdisk
 
       - name: Write pi-gen config
         run: |
@@ -43,8 +50,8 @@ jobs:
           STAGE_LIST='stage0 stage1 stage2'
           EOF
 
-      - name: Build image with pi-gen (Docker)
-        run: sudo ./build-docker.sh
+      - name: Build image with pi-gen
+        run: sudo ./build.sh
 
       - name: Fix deploy/ ownership
         run: sudo chown -R "$(id -u):$(id -g)" deploy/
