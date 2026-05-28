@@ -183,7 +183,7 @@ jobs:
                           f"(image version {version})."
                       ),
                       "subitems": [
-                          subitem("Pi Zero 2W", "zero2w", ["pi-zero-2"], "BCM2710A1"),
+                          subitem("Pi 3 / Zero 2 W", "zero2w", ["pi3", "pi-zero-2"], "BCM2710A1 / BCM2837"),
                       ],
                   }
               ]
