@@ -1,0 +1,14 @@
+[Unit]
+Description=Detect OTG-capable Raspberry Pi board for USB gadget
+After=local-fs.target
+# Ordered ahead of the gadget setup (which also After= this unit) and NM.
+Before=rpi-cam-gadget.service NetworkManager.service
+ConditionPathExists=/proc/device-tree/model
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rpi-cam-gadget-detect.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Configure USB composite gadget (CDC-NCM + optional UVC)
+# Skipped (not failed) on boards without an OTG port: the detect service
+# only writes the .enabled flag for Zero/Zero 2 W/Pi 4/Pi 5.
+ConditionPathExists=/run/rpi-cam-gadget.enabled
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount rpi-cam-gadget-detect.service
+# Ordering only — NetworkManager and rpi-camera still start if this unit
+# is skipped or fails, they just won't see a usb0 interface / bound UDC.
+Before=NetworkManager.service rpi-camera.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rpi-cam-gadget-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

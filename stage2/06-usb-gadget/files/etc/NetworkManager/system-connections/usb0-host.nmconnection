@@ -1,0 +1,19 @@
+[connection]
+id=usb0-host
+type=ethernet
+interface-name=usb0
+autoconnect=true
+autoconnect-priority=10
+
+[ethernet]
+
+[ipv4]
+# Shared mode: NetworkManager runs an internal dnsmasq scoped to usb0
+# and hands the USB host a 10.55.0.x lease — no separate dnsmasq package
+# needed. The Pi keeps its WiFi/eth default route; usb0 stays a private
+# /24 (matches the Raspberry Pi gadget convention of 10.55.0.1).
+method=shared
+address1=10.55.0.1/24
+
+[ipv6]
+method=ignore

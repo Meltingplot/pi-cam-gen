@@ -1,0 +1,5 @@
+# Allow the rpi-camera service user to (re)bind the USB gadget UDC for
+# UVC descriptor changes, and nothing else. The helper whitelists its
+# argument to bind|unbind, so this does not grant a general root shell.
+# FIRST_USER_NAME is substituted at image build time (stage2/06-usb-gadget/00-run.sh).
+FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-gadget-rebind.sh bind, /usr/local/sbin/rpi-cam-gadget-rebind.sh unbind

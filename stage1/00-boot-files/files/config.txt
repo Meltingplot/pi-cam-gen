@@ -45,4 +45,19 @@ otg_mode=1
 [cm5]
 dtoverlay=dwc2,dr_mode=host
 
+# USB OTG peripheral mode for the composite UVC + CDC-NCM gadget.
+# Only boards with a dedicated OTG port get this; Pi 3/3+ route USB
+# through an on-board hub (host-only) and are deliberately omitted.
+[pi0]
+# Pi Zero / Zero W — micro-USB is the OTG port.
+dtoverlay=dwc2,dr_mode=peripheral
+
+[pi02]
+# Pi Zero 2 W — micro-USB is the OTG port.
+dtoverlay=dwc2,dr_mode=peripheral
+
+[pi4]
+# Pi 4 USB-C. otg lets host mode still work when no host cable is present.
+dtoverlay=dwc2,dr_mode=otg
+
 [all]
