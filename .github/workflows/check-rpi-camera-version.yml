@@ -49,13 +49,13 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           branch: auto/bump-rpi-camera
-          base: arm64
+          base: master
           commit-message: "stage2: bump meltingplot.rpi_camera to ${{ steps.latest.outputs.version }}"
           title: "stage2: bump meltingplot.rpi_camera to ${{ steps.latest.outputs.version }}"
           body: |
             Auto-detected new release [`${{ steps.latest.outputs.tag }}`](https://github.com/Meltingplot/rpi-camera/releases/tag/${{ steps.latest.outputs.tag }}).
 
-            Updates `stage2/05-rpi-camera/files/rpi-camera-version` from the previous pin to `${{ steps.latest.outputs.version }}`. Merging this will trigger a fresh image build on `arm64`.
+            Updates `stage2/05-rpi-camera/files/rpi-camera-version` from the previous pin to `${{ steps.latest.outputs.version }}`. Merging this will trigger a fresh image build on `master`.
           labels: |
             dependencies
             auto-bump
