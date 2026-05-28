@@ -89,26 +89,28 @@ jobs:
             echo "| **combined** | \`$version\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Rename deploy image to zero2w artifact
+      - name: Rename deploy image to armhf artifact
         id: copies
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
+          # One universal Raspbian armhf (ARMv6) image runs on every Pi
+          # from the Zero W up; no per-model copies needed.
           src="$(ls deploy/*-lite.img.xz | head -n1)"
           base="${IMG_NAME}-${VERSION}"
           mkdir -p artifacts
-          out="artifacts/${base}-zero2w.img.xz"
+          out="artifacts/${base}-armhf.img.xz"
           cp -v "$src" "$out"
           sha256sum "$out" > "${out}.sha256"
           ls -lah artifacts/
           echo "base=$base" >> "$GITHUB_OUTPUT"
 
-      - name: Upload zero2w artifact
+      - name: Upload armhf artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.copies.outputs.base }}-zero2w
-          path: artifacts/*-zero2w.img.xz*
+          name: ${{ steps.copies.outputs.base }}-armhf
+          path: artifacts/*-armhf.img.xz*
           if-no-files-found: error
 
       # ---- Release publishing (tag pushes only) ----------------------------
@@ -118,7 +120,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
-          img="$(ls artifacts/*-zero2w.img.xz | head -n1)"
+          img="$(ls artifacts/*-armhf.img.xz | head -n1)"
           extract_size="$(xz --robot --list "$img" | awk '/^totals/ {print $5}')"
           extract_sha256="$(xz -dc "$img" | sha256sum | awk '{print $1}')"
           download_size="$(stat -c%s "$img")"
@@ -177,13 +179,19 @@ jobs:
                   {
                       "name": "Meltingplot Pi Camera",
                       "description": (
-                          "Headless 32-bit Raspberry Pi camera image for the "
-                          "Pi Zero 2 W, bundling Debian trixie and "
-                          "meltingplot.rpi_camera "
+                          "Headless 32-bit Raspberry Pi camera image "
+                          "(Raspbian trixie armhf, ARMv6) bundling "
+                          "meltingplot.rpi_camera. Runs on the Pi Zero W, "
+                          "Zero 2 W, Pi 3 / 3+ and Pi 4. "
                           f"(image version {version})."
                       ),
                       "subitems": [
-                          subitem("Pi 3 / Zero 2 W", "zero2w", ["pi3-32bit"], "BCM2710A1 / BCM2837"),
+                          subitem(
+                              "32-bit · Zero W to Pi 4",
+                              "armhf",
+                              ["pi1-32bit", "pi3-32bit", "pi4-32bit"],
+                              "ARMv6 Raspbian, runs on all listed boards",
+                          ),
                       ],
                   }
               ]
