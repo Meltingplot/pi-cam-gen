@@ -22,7 +22,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          tag="$(gh api /repos/Meltingplot/rpi-camera/releases/latest -q .tag_name)"
+          # /releases/latest skips prereleases, so list releases and take the
+          # most recently published one (drafts excluded, prereleases included).
+          tag="$(gh api '/repos/Meltingplot/rpi-camera/releases?per_page=50' \
+            -q 'map(select(.draft|not)) | sort_by(.published_at) | reverse | .[0].tag_name')"
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "No releases found for Meltingplot/rpi-camera" >&2
+            exit 1
+          fi
           version="${tag#v}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -46,7 +53,7 @@ jobs:
 
       - name: Open PR with version bump
         if: steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           branch: auto/bump-rpi-camera
           base: master
