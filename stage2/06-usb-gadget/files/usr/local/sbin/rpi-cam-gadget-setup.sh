@@ -92,7 +92,7 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	else
 		UVC_W=1920; UVC_H=1080
 	fi
-	UVC_INTERVAL=1000000   # 10 fps, in 100 ns units (matches capture default)
+	UVC_INTERVAL=2500000   # 4 fps, in 100 ns units (matches capture default)
 
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
