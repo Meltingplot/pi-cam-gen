@@ -161,6 +161,22 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/fs/h"
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/ss/h"
 
+	# Advertise the camera controls the rpi-camera pump maps to libcamera
+	# (uvc_controls.py). bmControls bit positions per the UVC spec:
+	#   Processing Unit: Brightness(D0) Contrast(D1) Saturation(D3)
+	#     Sharpness(D4) Gain(D9) WhiteBalanceTempAuto(D12) = 0x1b 0x12 0x00
+	#   Camera Terminal: AE-Mode(D1) ExposureTimeAbs(D3) FocusAbs(D5)
+	#     FocusAuto(D17)                                  = 0x2a 0x00 0x02
+	# Guarded: an older kernel without writable bmControls still brings the
+	# gadget up, just without host-side controls. The unit IDs the pump uses
+	# (CAMERA_TERMINAL_ID=1, PROCESSING_UNIT_ID=2) are the configfs defaults.
+	pu_bm="${UVC}/control/processing/default/bmControls"
+	ct_bm="${UVC}/control/terminal/camera/default/bmControls"
+	[ -e "${pu_bm}" ] && { echo 0x1b 0x12 0x00 > "${pu_bm}" 2>/dev/null \
+		|| echo "rpi-cam-gadget: warn: could not set PU bmControls" >&2; }
+	[ -e "${ct_bm}" ] && { echo 0x2a 0x00 0x02 > "${ct_bm}" 2>/dev/null \
+		|| echo "rpi-cam-gadget: warn: could not set CT bmControls" >&2; }
+
 	echo "${UVC_MAXPACKET}" > "${UVC}/streaming_maxpacket"
 	# Service the iso endpoint every microframe (bInterval = 1) so the bus can
 	# carry the largest advertised frame. Frame *rate* is paced in userspace by
