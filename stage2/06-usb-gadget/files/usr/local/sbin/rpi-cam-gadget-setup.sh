@@ -120,6 +120,16 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 
 	echo 2048 > "${UVC}/streaming_maxpacket"
 
+	# Throttle the isochronous endpoint to roughly our real bitrate.
+	# High-speed iso capacity = (8000 / 2^(interval-1)) * maxpacket. With
+	# the default streaming_interval=1 and maxpacket=2048 that is ~16 MB/s
+	# (~320 fps) — the gadget then pulls far faster than we produce and the
+	# userspace pump burns the CPU re-feeding the same frame. We only need
+	# ~4 fps * ~150 KB (1080p) ~= 600 KB/s, so interval=5 gives ~1 MB/s
+	# (1.6x headroom) and cuts the pull rate ~25x. Lower the number for more
+	# bandwidth/fps, raise it for less CPU (7+ starves 4 fps).
+	echo 5 > "${UVC}/streaming_interval"
+
 	ln -s "${GADGET}/${UVC}" configs/c.1/
 	echo "rpi-cam-gadget: UVC function ${UVC_W}x${UVC_H} MJPEG created"
 fi
