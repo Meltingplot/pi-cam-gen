@@ -1,6 +1,6 @@
-# Allow the rpi-camera service user to (re)bind the USB gadget UDC and to
-# rewrite the UVC descriptors for a resolution/fps change, and nothing else.
-# The helpers whitelist/validate their arguments (bind|unbind, numeric
-# width/height/fps), so this does not grant a general root shell.
+# Allow the rpi-camera service user to (re)bind the USB gadget UDC, and
+# nothing else. Resolution/fps are negotiated by the USB host over UVC, so no
+# descriptor-rewrite helper is needed. The helper whitelists its arguments
+# (bind|unbind), so this does not grant a general root shell.
 # FIRST_USER_NAME is substituted at image build time (stage2/06-usb-gadget/00-run.sh).
-FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-gadget-rebind.sh bind, /usr/local/sbin/rpi-cam-gadget-rebind.sh unbind, /usr/local/sbin/rpi-cam-gadget-reconfig.sh *
+FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-gadget-rebind.sh bind, /usr/local/sbin/rpi-cam-gadget-rebind.sh unbind
