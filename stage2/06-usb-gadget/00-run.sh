@@ -5,9 +5,10 @@
 # enable the two oneshot units. Activation is gated at runtime by
 # rpi-cam-gadget-detect.sh, so this is a no-op on non-OTG boards.
 
-install -m 755 files/usr/local/sbin/rpi-cam-gadget-detect.sh "${ROOTFS_DIR}/usr/local/sbin/"
-install -m 755 files/usr/local/sbin/rpi-cam-gadget-setup.sh  "${ROOTFS_DIR}/usr/local/sbin/"
-install -m 750 files/usr/local/sbin/rpi-cam-gadget-rebind.sh "${ROOTFS_DIR}/usr/local/sbin/"
+install -m 755 files/usr/local/sbin/rpi-cam-gadget-detect.sh   "${ROOTFS_DIR}/usr/local/sbin/"
+install -m 755 files/usr/local/sbin/rpi-cam-gadget-setup.sh    "${ROOTFS_DIR}/usr/local/sbin/"
+install -m 750 files/usr/local/sbin/rpi-cam-gadget-rebind.sh   "${ROOTFS_DIR}/usr/local/sbin/"
+install -m 750 files/usr/local/sbin/rpi-cam-gadget-reconfig.sh "${ROOTFS_DIR}/usr/local/sbin/"
 
 install -m 644 files/etc/systemd/system/rpi-cam-gadget-detect.service "${ROOTFS_DIR}/etc/systemd/system/"
 install -m 644 files/etc/systemd/system/rpi-cam-gadget.service        "${ROOTFS_DIR}/etc/systemd/system/"
