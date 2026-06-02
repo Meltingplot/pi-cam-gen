@@ -4,17 +4,16 @@
 # only on OTG-capable boards (gated by /run/rpi-cam-gadget.enabled).
 #
 # Phase status:
-#   - CDC-NCM is always created and the UDC is bound here, so USB
-#     networking comes up at boot with no userspace help.
-#   - The UVC function is created only when GADGET_ENABLE_UVC=1 (default
-#     off). Until the rpi-camera UVC pump (repo B) is in place there is
-#     nothing to feed the gadget, so it stays off and this script binds
-#     the UDC itself. Once the pump lands, flip the default on, stop
-#     binding the UDC here, and let rpi-camera bind after it has written
-#     the real streaming descriptors. See NOTES.md.
+#   - CDC-NCM is always created so USB networking comes up at boot.
+#   - The UVC function (GADGET_ENABLE_UVC=1, default on) advertises a
+#     single MJPEG format at the board resolution. This script writes the
+#     descriptors and binds the UDC; the rpi-camera Python pump
+#     (uvc_gadget.py) then answers PROBE/COMMIT and feeds frames into the
+#     resulting /dev/videoN. Dynamic resolution/fps reconfig is not wired
+#     yet (fixed resolution per board). See NOTES.md.
 set -eu
 
-GADGET_ENABLE_UVC="${GADGET_ENABLE_UVC:-0}"
+GADGET_ENABLE_UVC="${GADGET_ENABLE_UVC:-1}"
 
 GADGET=/sys/kernel/config/usb_gadget/picam
 CONFIGFS=/sys/kernel/config
@@ -77,53 +76,60 @@ echo "Pi Cam (NCM+UVC)" > configs/c.1/strings/0x409/configuration
 echo 250 > configs/c.1/MaxPower
 ln -sf functions/ncm.usb0 configs/c.1/
 
-# --- UVC webcam function (optional; placeholder descriptors) ----------
+# --- UVC webcam function ----------------------------------------------
+# configfs layout follows a known-good UVC gadget setup: a single MJPEG
+# format/frame at the board's default resolution, the streaming header
+# linked into the fs/hs/ss class trees (high-speed is required — the Pi
+# enumerates at USB-2 high speed), and streaming_maxpacket raised. The
+# rpi-camera Python pump (uvc_gadget.py) answers PROBE/COMMIT and feeds
+# JPEG frames into the resulting /dev/videoN.
 if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
+	# Board-dependent default resolution, matching server.py's choice:
+	# the single-core Pi Zero / Zero W gets 720p, everything else 1080p.
+	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
+	if echo "${MODEL}" | grep -q 'Zero' && ! echo "${MODEL}" | grep -q 'Zero 2'; then
+		UVC_W=1280; UVC_H=720
+	else
+		UVC_W=1920; UVC_H=1080
+	fi
+	UVC_INTERVAL=1000000   # 10 fps, in 100 ns units (matches capture default)
+
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
 
-	# Control interface header.
-	mkdir -p "${UVC}/control/header/h"
-	ln -sf "${UVC}/control/header/h" "${UVC}/control/class/fs/h"
-	ln -sf "${UVC}/control/header/h" "${UVC}/control/class/ss/h"
-
-	# Placeholder MJPEG format, single 640x480 @ 5 fps frame. The real
-	# resolution/fps descriptors are rewritten by the rpi-camera pump
-	# before it binds the UDC.
-	fmt="${UVC}/streaming/mjpeg/m"
-	frm="${fmt}/640x480"
+	# Single MJPEG frame at the board resolution.
+	frm="${UVC}/streaming/mjpeg/m/${UVC_H}p"
 	mkdir -p "${frm}"
-	echo 640 > "${frm}/wWidth"
-	echo 480 > "${frm}/wHeight"
-	echo 2000000   > "${frm}/dwMinBitRate"
-	echo 30000000  > "${frm}/dwMaxBitRate"
-	echo 460800    > "${frm}/dwMaxVideoFrameBufferSize"
-	echo 2000000   > "${frm}/dwDefaultFrameInterval"   # 5 fps (units of 100ns)
-	echo 2000000   > "${frm}/dwFrameInterval"
+	echo "${UVC_W}" > "${frm}/wWidth"
+	echo "${UVC_H}" > "${frm}/wHeight"
+	echo "$(( UVC_W * UVC_H * 2 ))" > "${frm}/dwMaxVideoFrameBufferSize"
+	echo "${UVC_INTERVAL}" > "${frm}/dwDefaultFrameInterval"
+	printf '%s\n' "${UVC_INTERVAL}" > "${frm}/dwFrameInterval"
 
+	# Streaming header links the MJPEG format instance, then fs/hs/ss.
 	mkdir -p "${UVC}/streaming/header/h"
-	ln -sf "${UVC}/streaming/mjpeg"     "${UVC}/streaming/header/h/mjpeg"
-	ln -sf "${UVC}/streaming/header/h"  "${UVC}/streaming/class/fs/h"
-	ln -sf "${UVC}/streaming/header/h"  "${UVC}/streaming/class/hs/h"
+	ln -s "${GADGET}/${UVC}/streaming/mjpeg/m" "${UVC}/streaming/header/h/m"
+	ln -s "${GADGET}/${UVC}/streaming/header/h" "${UVC}/streaming/class/fs/h"
+	ln -s "${GADGET}/${UVC}/streaming/header/h" "${UVC}/streaming/class/hs/h"
+	ln -s "${GADGET}/${UVC}/streaming/header/h" "${UVC}/streaming/class/ss/h"
 
-	ln -sf "functions/uvc.usb0" configs/c.1/
+	# Control header links into fs/ss.
+	mkdir -p "${UVC}/control/header/h"
+	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/fs/h"
+	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/ss/h"
 
-	# Hand the streaming descriptor subtree to the rpi-camera service
-	# user so the (unprivileged) pump can rewrite resolution/fps later.
-	# The UDC bind itself still needs root (rpi-cam-gadget-rebind.sh).
-	chgrp -R "${RPI_CAM_USER:-pi}" "${UVC}/streaming" 2>/dev/null || true
-	chmod -R g+w "${UVC}/streaming" 2>/dev/null || true
+	echo 2048 > "${UVC}/streaming_maxpacket"
+
+	ln -s "${GADGET}/${UVC}" configs/c.1/
+	echo "rpi-cam-gadget: UVC function ${UVC_W}x${UVC_H} MJPEG created"
 fi
 
-# Bind to the first available UDC. With UVC off this is what brings the
-# NCM link up at boot. With UVC on (once the pump exists) this binding
-# moves into rpi-camera and should be removed from here.
-if [ "${GADGET_ENABLE_UVC}" != "1" ]; then
-	udc="$(ls /sys/class/udc | head -n1)"
-	if [ -z "${udc}" ]; then
-		echo "rpi-cam-gadget: no UDC available (is dwc2 in peripheral mode?)" >&2
-		exit 1
-	fi
-	echo "${udc}" > UDC
-	echo "rpi-cam-gadget: bound gadget to UDC ${udc}"
+# Bind the composite gadget to the UDC. The UVC /dev/videoN node appears
+# once this completes; rpi-camera's pump then opens it and streams.
+udc="$(ls /sys/class/udc | head -n1)"
+if [ -z "${udc}" ]; then
+	echo "rpi-cam-gadget: no UDC available (is dwc2 in peripheral mode?)" >&2
+	exit 1
 fi
+echo "${udc}" > UDC
+echo "rpi-cam-gadget: bound gadget to UDC ${udc}"

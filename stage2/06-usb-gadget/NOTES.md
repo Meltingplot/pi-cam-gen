@@ -5,7 +5,7 @@ boards (Pi Zero / Zero W, Zero 2 W, Pi 4; Pi 5 on the future 64-bit
 image). Pi 3 / 3+ have no OTG port and are skipped at runtime by
 `rpi-cam-gadget-detect.sh`.
 
-## What this stage ships today (repo A, NCM-first)
+## What this stage ships today (repo A)
 
 - `[pi0]`/`[pi02]`/`[pi4]` dwc2 peripheral/otg sections in
   `stage1/00-boot-files/files/config.txt`, plus
@@ -13,15 +13,20 @@ image). Pi 3 / 3+ have no OTG port and are skipped at runtime by
 - A board-detection oneshot that writes `/run/rpi-cam-gadget.enabled`
   or `.disabled`.
 - A gadget-setup oneshot that builds the composite gadget via
-  configfs/libcomposite. **CDC-NCM only by default** — the UVC function
-  is written but gated behind `GADGET_ENABLE_UVC=1` (default off).
+  configfs/libcomposite: **CDC-NCM + UVC** (`GADGET_ENABLE_UVC=1`,
+  default on). UVC advertises a single MJPEG format at the board
+  resolution (720p on Zero/Zero W, 1080p else) following a known-good
+  configfs layout (fs/hs/ss streaming class, `streaming_maxpacket`),
+  then binds the UDC.
 - NetworkManager `usb0-host.nmconnection` (`method=shared`, 10.55.0.1/24).
-- A locked-down `rpi-cam-gadget-rebind.sh` + sudoers entry for the
-  (future) rpi-camera pump to re-bind the UDC on resolution changes.
+- A locked-down `rpi-cam-gadget-rebind.sh` + sudoers entry for a future
+  dynamic-resolution pump to re-bind the UDC (unused by the current
+  fixed-resolution MVP).
 
-With UVC off, `rpi-cam-gadget-setup.sh` binds the UDC itself, so USB
-networking comes up at boot with no userspace help — this is the
-Step 2 (NCM-only) deliverable from the implementation plan.
+The rpi-camera service (>= 1.0.0rc11) runs `uvc_gadget.UvcGadget`, which
+auto-detects the output `/dev/videoN`, answers UVC PROBE/COMMIT and pumps
+the live MJPEG frames. NCM networking + the HTTP/MJPEG web stream keep
+working alongside UVC (picamera2 is the single camera owner).
 
 ## DONE: `rpi-usb-gadget` Debian package audit (plan step 3)
 
@@ -62,18 +67,27 @@ investing in the rpi-camera UVC pump, measure on real hardware:
 - If the one core saturates at 1080p: default UVC to 720p, possibly cap
   simultaneous HTTP+UVC at 720p. Record the chosen resolution caps here.
 
-## NEXT: turning UVC on (repo B coupling)
+## NEXT: dynamic resolution / fps (deferred to a later rc)
 
-When the rpi-camera UVC pump (repo B) is ready:
-1. Set `GADGET_ENABLE_UVC=1` for the setup script (env in the unit, or
-   flip the default).
-2. Remove the self-bind block at the end of `rpi-cam-gadget-setup.sh`
-   (the `[ "${GADGET_ENABLE_UVC}" != "1" ]` branch) — rpi-camera will
-   bind the UDC after writing the real streaming descriptors.
-3. Add the `RPI_CAMERA_ENABLE_UVC` / `RPI_CAMERA_UVC_GADGET_PATH` /
-   `RPI_CAMERA_GADGET_REBIND_HELPER` env vars to the
-   `stage2/05-rpi-camera/01-run.sh` install call. (Deliberately NOT done
-   yet: the released install ignores them, so they'd be dead config.)
-4. Fix the `RPI_CAM_USER` fallback in `rpi-cam-gadget-setup.sh` (the UVC
-   `chgrp` currently falls back to `pi`) to the real `FIRST_USER_NAME`,
-   e.g. bake it in via the unit's `Environment=`.
+The current UVC is fixed-resolution per board. To follow web-UI
+resolution/fps changes live (plan steps 7/8/12), add to rpi-camera:
+- `gadget.py` (rewrite configfs streaming descriptors) + the
+  `rpi-cam-gadget-rebind.sh` helper (already shipped here) to re-bind the
+  UDC, driven by a `CameraController` change listener.
+- the subscribe-model frame buffer + `FrameRateGovernor`.
+The descriptor resolution would then be written by Python (not this
+script), and the UVC `S_FMT`/probe-commit would be re-negotiated.
+
+## FIRST HARDWARE TEST (Pi Zero 2 W), then Zero W
+
+UVC is **untested on hardware** — `uvc_gadget.py` is a from-scratch port
+of the kernel uvc-gadget select loop. Expect a HW iteration round. When
+testing:
+- `journalctl -u rpi-camera` — look for "UVC gadget node: /dev/videoN",
+  "streaming WxH started", or ioctl errors.
+- Host: the Pi should enumerate a UVC webcam; `v4l2-ctl --list-devices`,
+  `ffplay -f v4l2 /dev/videoN` (Linux host) / Camera app (Win/macOS).
+- NCM networking + `http://<host>.local:8081/` must keep working
+  alongside.
+- On the single-core **Zero W**, also watch `top` for CPU saturation at
+  720p HTTP+UVC; drop resolution if the one core can't keep up.
