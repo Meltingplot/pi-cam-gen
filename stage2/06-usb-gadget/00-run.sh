@@ -22,8 +22,13 @@ sed -i "s/FIRST_USER_NAME/${FIRST_USER_NAME}/g" "${ROOTFS_DIR}/etc/sudoers.d/rpi
 
 # Validate the sudoers file inside the chroot so a typo fails the build
 # instead of silently disabling sudo on the device.
+#
+# rpi-usb-gadget ships a (shipped-disabled) rpi-usb-gadget-ics.service
+# that builds its own legacy g_ether gadget. Mask it so it can never be
+# enabled behind our back and fight us over the single UDC.
 on_chroot << 'EOF'
 visudo -cf /etc/sudoers.d/rpi-camera-gadget
+systemctl mask rpi-usb-gadget-ics.service
 systemctl enable rpi-cam-gadget-detect.service
 systemctl enable rpi-cam-gadget.service
 EOF

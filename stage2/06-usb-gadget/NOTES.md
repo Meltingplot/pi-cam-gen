@@ -23,21 +23,34 @@ With UVC off, `rpi-cam-gadget-setup.sh` binds the UDC itself, so USB
 networking comes up at boot with no userspace help — this is the
 Step 2 (NCM-only) deliverable from the implementation plan.
 
-## OPEN: audit the `rpi-usb-gadget` Debian package (plan step 3)
+## DONE: `rpi-usb-gadget` Debian package audit (plan step 3)
 
-`rpi-usb-gadget` is pulled in by `stage2/01-sys-tweaks/00-packages`. It
-is currently unknown whether it ships its own configfs setup scripts /
-systemd units that would fight ours over the same UDC.
+Audited on a v0.0.7 image (`dpkg -L rpi-usb-gadget` +
+`systemctl list-unit-files | grep -i gadget`):
 
-Before enabling UVC / shipping widely, on a built rootfs run:
+    /usr/bin/rpi-usb-gadget
+    /usr/lib/modprobe.d/g_ether.conf
+    /usr/lib/systemd/system/rpi-usb-gadget-ics.service   # shipped DISABLED
+    /usr/libexec/rpi-usb-gadget/ics-watch
+    /etc/update-motd.d/99-rpi-usb-gadget
 
-    dpkg -L rpi-usb-gadget
-    systemctl list-unit-files | grep -i gadget
+    rpi-cam-gadget-detect.service   enabled
+    rpi-cam-gadget.service          enabled
+    rpi-usb-gadget-ics.service      disabled
+    usb-gadget.target               static
 
-Then decide and record here:
-- coexist (mask its unit in `00-run.sh`), or
-- reuse it (drop our setup script, write its config file instead), or
-- drop the package from `00-packages` (nothing else depends on it).
+Verdict: **no conflict.** The package's only unit
+(`rpi-usb-gadget-ics.service`) ships disabled and uses the legacy
+single-function `g_ether` path (`/usr/lib/modprobe.d/g_ether.conf`),
+which we never trigger — we load `libcomposite` + a configfs `ncm`
+function instead. The modprobe.d file is inert unless `g_ether` is
+loaded.
+
+Action taken: `00-run.sh` now `systemctl mask`s
+`rpi-usb-gadget-ics.service` defensively, so a future `raspi-config`
+or manual enable can't bring up a second gadget that fights us over
+the single UDC. The package stays installed (cheap, and other RPi
+tooling may reference it).
 
 ## OPEN: single-core performance measurement (plan step 0 / 6.5)
 
