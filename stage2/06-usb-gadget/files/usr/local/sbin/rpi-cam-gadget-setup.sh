@@ -92,7 +92,13 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	else
 		UVC_W=1920; UVC_H=1080
 	fi
-	UVC_INTERVAL=2500000   # 4 fps, in 100 ns units (matches capture default)
+	# Single source for the fps — must match rpi-camera's --framerate
+	# default. Both the advertised frame interval and the isochronous
+	# endpoint bandwidth below are derived from it, so changing the fps
+	# keeps them consistent.
+	UVC_FPS="${RPI_CAMERA_FRAMERATE:-4}"
+	UVC_MAXPACKET=2048
+	UVC_INTERVAL=$(( 10000000 / UVC_FPS ))   # dwFrameInterval, 100 ns units
 
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
@@ -118,20 +124,34 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/fs/h"
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/ss/h"
 
-	echo 2048 > "${UVC}/streaming_maxpacket"
+	echo "${UVC_MAXPACKET}" > "${UVC}/streaming_maxpacket"
 
-	# Throttle the isochronous endpoint to roughly our real bitrate.
-	# High-speed iso capacity = (8000 / 2^(interval-1)) * maxpacket. With
-	# the default streaming_interval=1 and maxpacket=2048 that is ~16 MB/s
-	# (~320 fps) — the gadget then pulls far faster than we produce and the
-	# userspace pump burns the CPU re-feeding the same frame. We only need
-	# ~4 fps * ~150 KB (1080p) ~= 600 KB/s, so interval=5 gives ~1 MB/s
-	# (1.6x headroom) and cuts the pull rate ~25x. Lower the number for more
-	# bandwidth/fps, raise it for less CPU (7+ starves 4 fps).
-	echo 5 > "${UVC}/streaming_interval"
+	# Throttle the isochronous endpoint to our actual bitrate instead of
+	# leaving streaming_interval at the bandwidth-maximizing default of 1.
+	# At default the high-speed iso capacity is (8000 * maxpacket) ~= 16 MB/s
+	# (~300 fps), so the gadget pulls far faster than we produce and the
+	# userspace pump burns the CPU re-feeding the same frame.
+	#
+	# Derive the interval from fps + frame size (not a magic number):
+	#   budget   = fps * W*H * 0.12 B/px      (~2x measured MJPEG, headroom)
+	#   capacity(i) = (8000 / 2^(i-1)) * maxpacket   [high-speed]
+	# Pick the highest bInterval (lowest bandwidth/CPU) whose capacity still
+	# covers the budget. This tracks UVC_FPS automatically: e.g. 4 fps gives
+	# interval 6 at 720p and 5 at 1080p.
+	budget=$(( UVC_FPS * UVC_W * UVC_H * 12 / 100 ))
+	si=1
+	for i in $(seq 1 16); do
+		cap=$(( 8000 / (1 << (i - 1)) * UVC_MAXPACKET ))
+		if [ "${cap}" -ge "${budget}" ]; then
+			si=${i}
+		else
+			break
+		fi
+	done
+	echo "${si}" > "${UVC}/streaming_interval"
 
 	ln -s "${GADGET}/${UVC}" configs/c.1/
-	echo "rpi-cam-gadget: UVC function ${UVC_W}x${UVC_H} MJPEG created"
+	echo "rpi-cam-gadget: UVC ${UVC_W}x${UVC_H} @ ${UVC_FPS}fps, streaming_interval=${si}"
 fi
 
 # Bind the composite gadget to the UDC. The UVC /dev/videoN node appears
