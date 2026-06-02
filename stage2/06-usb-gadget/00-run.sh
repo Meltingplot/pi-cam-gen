@@ -16,6 +16,12 @@ install -d -m 700 "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
 install -m 600 files/etc/NetworkManager/system-connections/usb0-host.nmconnection \
 	"${ROOTFS_DIR}/etc/NetworkManager/system-connections/"
 
+# systemd drop-in: give NetworkManager CAP_CHOWN so its shared-mode
+# dnsmasq can chown the usb0 PID file (silences a warning on every connect).
+install -d -m 755 "${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d"
+install -m 644 files/etc/systemd/system/NetworkManager.service.d/10-dnsmasq-chown.conf \
+	"${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d/"
+
 # sudoers: substitute the real first-user name, then install 0440 root:root.
 install -m 0440 files/etc/sudoers.d/rpi-camera-gadget "${ROOTFS_DIR}/etc/sudoers.d/rpi-camera-gadget"
 sed -i "s/FIRST_USER_NAME/${FIRST_USER_NAME}/g" "${ROOTFS_DIR}/etc/sudoers.d/rpi-camera-gadget"
