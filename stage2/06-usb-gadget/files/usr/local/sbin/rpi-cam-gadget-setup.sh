@@ -27,10 +27,25 @@ if [ ! -d "${CONFIGFS}/usb_gadget" ]; then
 	exit 1
 fi
 
-# Idempotent: if a previous run left the gadget, tear it down first.
-if [ -d "${GADGET}" ]; then
+# Fully tear down any previous gadget so this script is re-runnable: UVC
+# descriptors (streaming_interval, frame sizes) are locked once the gadget
+# is bound, so changing them means recreating the function from scratch.
+# Order matters in configfs: unbind, drop config function links + strings,
+# remove every function symlink, then rmdir dirs deepest-first.
+teardown_gadget() {
+	[ -d "${GADGET}" ] || return 0
 	echo "" > "${GADGET}/UDC" 2>/dev/null || true
-fi
+	# Drop config->function links first, then the config dirs deepest-first
+	# (a function cannot be removed while a config still references it).
+	find "${GADGET}"/configs -type l -delete 2>/dev/null || true
+	find "${GADGET}"/configs -mindepth 1 -depth -type d -exec rmdir {} + 2>/dev/null || true
+	# Then the function symlinks (uvc class/header links), then the dirs.
+	find "${GADGET}"/functions -type l -delete 2>/dev/null || true
+	find "${GADGET}"/functions -mindepth 1 -depth -type d -exec rmdir {} + 2>/dev/null || true
+	rmdir "${GADGET}"/strings/* 2>/dev/null || true
+	rmdir "${GADGET}" 2>/dev/null || true
+}
+teardown_gadget
 
 mkdir -p "${GADGET}"
 cd "${GADGET}"
