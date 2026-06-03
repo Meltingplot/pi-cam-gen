@@ -1,25 +1,23 @@
 #!/bin/bash
-# Build the USB composite gadget (CDC-NCM network + optional UVC webcam)
-# via configfs/libcomposite. Runs once at boot from rpi-cam-gadget.service,
-# only on OTG-capable boards (gated by /run/rpi-cam-gadget.enabled).
+# Build a SINGLE-FUNCTION USB gadget via configfs/libcomposite: either a UVC
+# webcam OR a CDC-NCM network device.
 #
-# Phase status:
-#   - CDC-NCM is always created so USB networking comes up at boot.
-#   - The UVC function (GADGET_ENABLE_UVC=1, default on) advertises a single
-#     MJPEG format with SEVERAL frame sizes (per-board, see tiers below) and
-#     frame intervals up to 30 fps. This script writes the descriptors ONCE
-#     and binds the UDC; they are never rewritten at runtime. The USB host
-#     picks a resolution/fps via PROBE/COMMIT; the rpi-camera Python pump
-#     (uvc_gadget.py) honours that choice, drives picamera2 to it, and feeds
-#     frames into the resulting /dev/videoN, pacing delivery itself.
+# Why not both at once? A composite UVC+NCM gadget does NOT enumerate reliably
+# on the Pi's dwc2 UDC (it intermittently comes up full-speed with a dead ep0;
+# each function works fine on its own). So we run one function at a time and
+# switch between them at runtime — see rpi-cam-gadget-mode.sh: boot as UVC and
+# fall back to NCM if no host opens the video stream within a grace period.
 #
-#     Because the host negotiates the resolution the regular UVC way, a change
-#     needs NO descriptor rewrite and NO forced re-enumeration. The
-#     isochronous endpoint is sized for the largest frame and simply idles at
-#     low fps, so there is no fps-dependent bandwidth tuning here.
+# Usage: rpi-cam-gadget-setup.sh [uvc|ncm]   (default: $GADGET_MODE, else uvc)
+# Re-runnable: it fully tears down any existing gadget first, so it doubles as
+# the runtime mode-switch primitive.
 set -eu
 
-GADGET_ENABLE_UVC="${GADGET_ENABLE_UVC:-1}"
+MODE="${1:-${GADGET_MODE:-uvc}}"
+case "${MODE}" in
+	uvc|ncm) ;;
+	*) echo "rpi-cam-gadget: unknown mode '${MODE}' (expected uvc|ncm)" >&2; exit 2 ;;
+esac
 
 GADGET=/sys/kernel/config/usb_gadget/picam
 CONFIGFS=/sys/kernel/config
@@ -33,19 +31,15 @@ if [ ! -d "${CONFIGFS}/usb_gadget" ]; then
 	exit 1
 fi
 
-# Fully tear down any previous gadget so this script is re-runnable: UVC
-# descriptors (streaming_interval, frame sizes) are locked once the gadget
-# is bound, so changing them means recreating the function from scratch.
-# Order matters in configfs: unbind, drop config function links + strings,
-# remove every function symlink, then rmdir dirs deepest-first.
+# Fully tear down any previous gadget so this script is re-runnable (and can
+# switch modes at runtime). Order matters in configfs: unbind the UDC, drop the
+# config->function links + config dirs deepest-first, then the function
+# symlinks + dirs, then strings.
 teardown_gadget() {
 	[ -d "${GADGET}" ] || return 0
 	echo "" > "${GADGET}/UDC" 2>/dev/null || true
-	# Drop config->function links first, then the config dirs deepest-first
-	# (a function cannot be removed while a config still references it).
 	find "${GADGET}"/configs -type l -delete 2>/dev/null || true
 	find "${GADGET}"/configs -mindepth 1 -depth -type d -exec rmdir {} + 2>/dev/null || true
-	# Then the function symlinks (uvc class/header links), then the dirs.
 	find "${GADGET}"/functions -type l -delete 2>/dev/null || true
 	find "${GADGET}"/functions -mindepth 1 -depth -type d -exec rmdir {} + 2>/dev/null || true
 	rmdir "${GADGET}"/strings/* 2>/dev/null || true
@@ -62,12 +56,6 @@ echo 0x0104 > idProduct
 echo 0x0100 > bcdDevice
 echo 0x0200 > bcdUSB
 
-# Misc Device / Interface Association Descriptor so a composite
-# (UVC + NCM) enumerates correctly on Windows hosts.
-echo 0xEF > bDeviceClass
-echo 0x02 > bDeviceSubClass
-echo 0x01 > bDeviceProtocol
-
 # Stable serial (and thus stable MACs) from the board serial so the host
 # does not hand out a fresh DHCP lease on every reboot.
 SERIAL="$(tr -d '\0' < /proc/device-tree/serial-number 2>/dev/null || true)"
@@ -79,32 +67,37 @@ echo "meltingplot" > strings/0x409/manufacturer
 echo "Pi Cam"      > strings/0x409/product
 echo "${SERIAL}"   > strings/0x409/serialnumber
 
-# Locally-administered MACs derived from the last 10 hex digits of the
-# serial. Host and device get a different first octet so they never clash.
-S="$(printf '%s' "${SERIAL}" | tail -c 10)"
-S="$(printf '%010s' "${S}" | tr ' ' '0')"
-mac_tail="${S:0:2}:${S:2:2}:${S:4:2}:${S:6:2}:${S:8:2}"
-DEV_ADDR="02:${mac_tail}"
-HOST_ADDR="06:${mac_tail}"
+mkdir -p configs/c.1/strings/0x409
+echo "Pi Cam (${MODE})" > configs/c.1/strings/0x409/configuration
+echo 250 > configs/c.1/MaxPower
 
 # --- CDC-NCM network function -----------------------------------------
-mkdir -p functions/ncm.usb0
-echo "${DEV_ADDR}"  > functions/ncm.usb0/dev_addr
-echo "${HOST_ADDR}" > functions/ncm.usb0/host_addr
+build_ncm() {
+	# IAD device class so the CDC-NCM function binds cleanly on Windows too.
+	echo 0xEF > bDeviceClass
+	echo 0x02 > bDeviceSubClass
+	echo 0x01 > bDeviceProtocol
 
-mkdir -p configs/c.1/strings/0x409
-echo "Pi Cam (NCM+UVC)" > configs/c.1/strings/0x409/configuration
-echo 250 > configs/c.1/MaxPower
-ln -sf functions/ncm.usb0 configs/c.1/
+	# Locally-administered MACs from the last 10 hex digits of the serial.
+	# Host and device get a different first octet so they never clash.
+	S="$(printf '%s' "${SERIAL}" | tail -c 10)"
+	S="$(printf '%010s' "${S}" | tr ' ' '0')"
+	mac_tail="${S:0:2}:${S:2:2}:${S:4:2}:${S:6:2}:${S:8:2}"
+
+	mkdir -p functions/ncm.usb0
+	echo "02:${mac_tail}" > functions/ncm.usb0/dev_addr
+	echo "06:${mac_tail}" > functions/ncm.usb0/host_addr
+	ln -sf functions/ncm.usb0 configs/c.1/
+	echo "rpi-cam-gadget: built NCM gadget"
+}
 
 # --- UVC webcam function ----------------------------------------------
-# A single MJPEG format advertising SEVERAL frame sizes; the USB host picks
-# one via PROBE/COMMIT and the rpi-camera pump (uvc_gadget.py) drives picamera2
-# to it. The streaming header is linked into the fs/hs/ss class trees
-# (high-speed is required — the Pi enumerates at USB-2 high speed) and
-# streaming_maxpacket is raised. The pump answers the control negotiation and
-# feeds JPEG frames into the resulting /dev/videoN, pacing delivery itself.
-if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
+# A single MJPEG format advertising SEVERAL frame sizes; the USB host picks one
+# via PROBE/COMMIT and the rpi-camera pump (uvc_gadget.py) drives picamera2 to
+# it and feeds JPEG frames into the resulting /dev/videoN, pacing delivery.
+# bDeviceClass is left at its default (per-interface) — a plain UVC webcam; the
+# UVC IAD in the config groups VideoControl + VideoStreaming.
+build_uvc() {
 	# Advertised frame sizes (ascending — the order IS the UVC bFrameIndex).
 	# MUST match gadget_frames() in rpi-camera's uvc_gadget.py. The largest
 	# frame is bounded per board to what the hardware can sensibly stream:
@@ -115,33 +108,22 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	# UVC_INTERVAL is the iso endpoint bInterval: it is serviced every
 	# 2^(bInterval-1) microframes, so it costs ~8000/2^(bInterval-1)
 	# interrupts/sec. bInterval=1 (every microframe, 8000 int/s) buries the
-	# single-core ARMv6 Pi Zero in softirqs (~50-70% sys CPU, ~23k ctxsw/s)
-	# even at idle/low fps. Raise it there to thin the interrupt storm; the
-	# multi-core boards absorb 8000 int/s fine and need the bandwidth for
-	# their larger frames, so they stay at 1.
+	# single-core ARMv6 Pi Zero in softirqs even at idle; raise it there.
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 	if echo "${MODEL}" | grep -q 'Zero 2'; then
 		FRAMES="640x480 1280x720 1920x1080"
 		UVC_INTERVAL=1
 	elif echo "${MODEL}" | grep -q 'Zero'; then
 		FRAMES="640x480 1280x720"
-		# bInterval 3 = every 4 microframes => ~2000 int/s, ~2 MB/s, which
-		# carries the 720p cap above (the pump paces fps anyway).
 		UVC_INTERVAL=3
 	else
 		FRAMES="640x480 1280x720 1920x1080 2304x1296 4608x2592"
 		UVC_INTERVAL=1
 	fi
-	# Single-transaction iso: 1024 B/microframe => 8000 * 1024 ~= 8 MB/s at
-	# bInterval 1, above the ~7.5 MB/s a 1080p30 MJPEG stream needs. Larger
-	# frames simply take more microframes to drain (the pump paces fps anyway).
-	#
-	# MUST stay <= 1024: a value >1024 forces *high-bandwidth* isochronous
-	# (mult>1, i.e. >1 transaction/microframe via the wMaxPacketSize mult bits),
-	# which the Pi's dwc2 UDC does NOT support in device mode. The endpoint then
-	# underruns on every request (uvc: "VS request completed with status -61"
-	# == -ENODATA), the gadget re-queues in a tight loop, and the kernel pins a
-	# core at 100% — starving the userspace pump (HTTP dies, frames stop).
+	# Single-transaction iso, MUST stay <= 1024: a value >1024 forces
+	# high-bandwidth iso (>1 transaction/microframe), which the Pi's dwc2 UDC
+	# does NOT support in device mode (it then underruns on every request and
+	# pins a core at 100%).
 	UVC_MAXPACKET=1024
 
 	UVC=functions/uvc.usb0
@@ -149,8 +131,7 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 
 	# One frame descriptor per advertised size. dwMaxVideoFrameBufferSize is a
 	# 1 byte/pixel MJPEG ceiling (matches the pump's buffer sizing). Each frame
-	# advertises the same interval list (100 ns units): 30/15/10/5/4/2/1 fps;
-	# the pump clamps and the camera caps what it can actually deliver.
+	# advertises the same interval list (100 ns units): 30/15/10/5/4/2/1 fps.
 	idx=0
 	default_idx=1
 	for res in ${FRAMES}; do
@@ -176,20 +157,13 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	ln -s "${GADGET}/${UVC}/streaming/header/h" "${UVC}/streaming/class/hs/h"
 	ln -s "${GADGET}/${UVC}/streaming/header/h" "${UVC}/streaming/class/ss/h"
 
-	# Control header links into fs/ss.
+	# Control header links into fs/ss (the kernel exposes no hs dir for control).
 	mkdir -p "${UVC}/control/header/h"
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/fs/h"
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/ss/h"
 
-	# Advertise the camera controls the rpi-camera pump maps to libcamera
-	# (uvc_controls.py). bmControls bit positions per the UVC spec:
-	#   Processing Unit: Brightness(D0) Contrast(D1) Saturation(D3)
-	#     Sharpness(D4) Gain(D9) WhiteBalanceTempAuto(D12) = 0x1b 0x12 0x00
-	#   Camera Terminal: AE-Mode(D1) ExposureTimeAbs(D3) FocusAbs(D5)
-	#     FocusAuto(D17)                                  = 0x2a 0x00 0x02
-	# Guarded: an older kernel without writable bmControls still brings the
-	# gadget up, just without host-side controls. The unit IDs the pump uses
-	# (CAMERA_TERMINAL_ID=1, PROCESSING_UNIT_ID=2) are the configfs defaults.
+	# Advertise the camera controls the rpi-camera pump maps to libcamera.
+	# Guarded: an older kernel without writable bmControls still comes up.
 	pu_bm="${UVC}/control/processing/default/bmControls"
 	ct_bm="${UVC}/control/terminal/camera/default/bmControls"
 	[ -e "${pu_bm}" ] && { echo 0x1b 0x12 0x00 > "${pu_bm}" 2>/dev/null \
@@ -198,23 +172,23 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 		|| echo "rpi-cam-gadget: warn: could not set CT bmControls" >&2; }
 
 	echo "${UVC_MAXPACKET}" > "${UVC}/streaming_maxpacket"
-	# bInterval of the iso streaming endpoint (see UVC_INTERVAL above). Frame
-	# *rate* is paced in userspace by frame availability (uvc_gadget.py); this
-	# only sets how often dwc2 services the endpoint, i.e. the interrupt rate.
-	# Contrary to intuition, a busier endpoint at idle is NOT free — every
-	# service is an interrupt, so on the single-core Pi Zero this is raised.
-	echo "${UVC_INTERVAL}" > "${UVC}/streaming_interval"
+	echo "${UVC_INTERVAL}"  > "${UVC}/streaming_interval"
 
 	ln -s "${GADGET}/${UVC}" configs/c.1/
-	echo "rpi-cam-gadget: UVC frames [${FRAMES}], default #${default_idx}, streaming_interval=${UVC_INTERVAL}"
-fi
+	echo "rpi-cam-gadget: built UVC gadget, frames [${FRAMES}], default #${default_idx}, streaming_interval=${UVC_INTERVAL}"
+}
 
-# Bind the composite gadget to the UDC. The UVC /dev/videoN node appears
-# once this completes; rpi-camera's pump then opens it and streams.
+case "${MODE}" in
+	ncm) build_ncm ;;
+	uvc) build_uvc ;;
+esac
+
+# Bind the gadget to the UDC. The /dev/videoN node (UVC) or usb0 (NCM) appears
+# once this completes.
 udc="$(ls /sys/class/udc | head -n1)"
 if [ -z "${udc}" ]; then
 	echo "rpi-cam-gadget: no UDC available (is dwc2 in peripheral mode?)" >&2
 	exit 1
 fi
 echo "${udc}" > UDC
-echo "rpi-cam-gadget: bound gadget to UDC ${udc}"
+echo "rpi-cam-gadget: bound ${MODE} gadget to UDC ${udc}"

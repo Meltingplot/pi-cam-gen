@@ -1,9 +1,30 @@
 # stage2/06-usb-gadget — notes & open items
 
-USB composite gadget (CDC-NCM network + UVC webcam) for OTG-capable
-boards (Pi Zero / Zero W, Zero 2 W, Pi 4; Pi 5 on the future 64-bit
-image). Pi 3 / 3+ have no OTG port and are skipped at runtime by
-`rpi-cam-gadget-detect.sh`.
+USB gadget (a **UVC webcam** OR a **CDC-NCM** network device — one at a time,
+not a composite) for OTG-capable boards (Pi Zero / Zero W, Zero 2 W, Pi 4;
+Pi 5 on the future 64-bit image). Pi 3 / 3+ have no OTG port and are skipped at
+runtime by `rpi-cam-gadget-detect.sh`.
+
+## Why single-function (UVC ⇄ NCM switch, not a composite)
+
+A composite UVC+NCM gadget does **not** enumerate reliably on the Pi's dwc2
+UDC: it intermittently comes up full-speed with a dead ep0 (the host logs
+`device descriptor read … -110`; the device shows `Mode Mismatch Interrupt`
+and an over-allocated RX FIFO). Each function works perfectly **alone**;
+together they don't. This matches long-standing reports on the RPi forums —
+composite UVC+ethernet only "works" in narrow corners (Pi 4 / Ubuntu / ECM).
+So we run one function at a time and switch:
+
+- **Boot → UVC** by default (`rpi-cam-gadget-mode.sh init`).
+- If **no host opens the UVC stream within ~30 s** (`rpi-cam-gadget-fallback.timer`),
+  tear UVC down and bring up **NCM** so the host can pull the MJPEG/HTTP stream
+  over USB networking instead. The pump signals an opened stream by touching
+  `/run/rpi-camera/uvc-active` (rpi-camera `reconfig.py`).
+- **Override:** drop a file named **`ncm-mode`** on the boot partition
+  (`/boot/firmware/ncm-mode`) to skip UVC and boot straight to NCM — pull the
+  SD card on any PC, create the file, done.
+- dwc2 runs in **`dr_mode=peripheral`** (deterministic gadget; `otg` left the
+  role to the floating ID pin and caused the mismatch storm).
 
 ## What this stage ships today (repo A)
 

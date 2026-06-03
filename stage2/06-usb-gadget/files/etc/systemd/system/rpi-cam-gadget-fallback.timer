@@ -1,0 +1,12 @@
+[Unit]
+Description=Grace period before UVC->NCM gadget fallback
+ConditionPathExists=/run/rpi-cam-gadget.enabled
+
+[Timer]
+# 30 s after boot: long enough for rpi-camera to start and for a host to open
+# the UVC stream, short enough that an unused webcam flips to networking fast.
+OnBootSec=30
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

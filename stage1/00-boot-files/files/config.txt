@@ -45,24 +45,27 @@ otg_mode=1
 [cm5]
 dtoverlay=dwc2,dr_mode=host
 
-# USB OTG mode for the composite UVC + CDC-NCM gadget.
-# Only boards with a dedicated OTG port get this; Pi 3/3+ route USB
-# through an on-board hub (host-only) and are deliberately omitted.
-# dr_mode=otg (not peripheral): forced peripheral mode fails to bring up
-# the high-speed PHY on the Zero 2 W (the host sees a full-speed device
-# and the descriptor read times out); otg runs the proper bring-up and
-# resolves to peripheral when plugged into a host. It is also what the
-# official Raspberry Pi gadget docs use.
+# Peripheral mode for the USB gadget (UVC webcam or CDC-NCM, one at a time —
+# see rpi-cam-gadget-mode.sh). Only boards with a dedicated OTG port get this;
+# Pi 3/3+ route USB through an on-board hub (host-only) and are omitted.
+#
+# dr_mode=peripheral (NOT otg): the device is always a pure gadget, so there is
+# no host role to negotiate. With otg, dwc2 leans on the (floating) micro-USB ID
+# pin to pick a role and intermittently lands in host mode — we observed a
+# "Mode Mismatch Interrupt" storm and failed/full-speed enumeration. peripheral
+# is deterministic and removes that ambiguity. (The earlier note blaming
+# peripheral for a full-speed/descriptor-timeout was a misdiagnosis: that was
+# the UVC+NCM *composite* over-running the dwc2 FIFO, not the dr_mode.)
 [pi0]
 # Pi Zero / Zero W — micro-USB is the OTG port.
-dtoverlay=dwc2,dr_mode=otg
+dtoverlay=dwc2,dr_mode=peripheral
 
 [pi02]
 # Pi Zero 2 W — micro-USB is the OTG port.
-dtoverlay=dwc2,dr_mode=otg
+dtoverlay=dwc2,dr_mode=peripheral
 
 [pi4]
 # Pi 4 USB-C.
-dtoverlay=dwc2,dr_mode=otg
+dtoverlay=dwc2,dr_mode=peripheral
 
 [all]
