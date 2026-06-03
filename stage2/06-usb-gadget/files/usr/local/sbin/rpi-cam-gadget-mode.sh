@@ -16,9 +16,9 @@ set -eu
 
 SETUP=/usr/local/sbin/rpi-cam-gadget-setup.sh
 MODE_FILE=/run/rpi-cam-gadget.mode
-# Written by the rpi-camera pump (uvc_gadget.py) on UVC_EVENT_STREAMON, inside
-# the service's RuntimeDirectory (owned by the service user).
-UVC_ACTIVE=/run/rpi-camera/uvc-active
+# The rpi-camera pump logs this line on UVC_EVENT_STREAMON; we grep the journal
+# for it to tell whether a host actually opened the video stream.
+UVC_STREAM_LOG='USB host UVC stream started'
 
 # Pi OS mounts the boot partition at /boot/firmware (older images: /boot).
 BOOT_FW=/boot/firmware
@@ -36,7 +36,6 @@ init)
 	else
 		mode=uvc
 	fi
-	rm -f "${UVC_ACTIVE}" 2>/dev/null || true
 	"${SETUP}" "${mode}"
 	echo "${mode}" > "${MODE_FILE}"
 	;;
@@ -44,7 +43,8 @@ init)
 fallback)
 	# Only relevant if we booted UVC and it is still UVC.
 	[ "$(cat "${MODE_FILE}" 2>/dev/null || true)" = uvc ] || exit 0
-	if [ -f "${UVC_ACTIVE}" ]; then
+	# Did a host open the UVC stream since boot? The pump logs it if so.
+	if journalctl -b -u rpi-camera.service --no-pager 2>/dev/null | grep -q "${UVC_STREAM_LOG}"; then
 		log "UVC stream was opened; staying in UVC mode"
 		exit 0
 	fi

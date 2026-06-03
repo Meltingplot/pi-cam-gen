@@ -18,8 +18,9 @@ So we run one function at a time and switch:
 - **Boot → UVC** by default (`rpi-cam-gadget-mode.sh init`).
 - If **no host opens the UVC stream within ~30 s** (`rpi-cam-gadget-fallback.timer`),
   tear UVC down and bring up **NCM** so the host can pull the MJPEG/HTTP stream
-  over USB networking instead. The pump signals an opened stream by touching
-  `/run/rpi-camera/uvc-active` (rpi-camera `reconfig.py`).
+  over USB networking instead. "Stream opened" is detected by grepping the
+  rpi-camera journal for the pump's `USB host UVC stream started` line (no flag
+  file / RuntimeDirectory needed, so it works on any package version).
 - **Override:** drop a file named **`ncm-mode`** on the boot partition
   (`/boot/firmware/ncm-mode`) to skip UVC and boot straight to NCM — pull the
   SD card on any PC, create the file, done.
