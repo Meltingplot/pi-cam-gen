@@ -56,6 +56,12 @@ echo 0x0104 > idProduct
 echo 0x0100 > bcdDevice
 echo 0x0200 > bcdUSB
 
+# WICHTIG fuer UVC als Composite: Miscellaneous Device + IAD,
+# sonst gruppiert v.a. Windows die VideoControl/VideoStreaming-Interfaces nicht.
+echo 0xEF > bDeviceClass      # Miscellaneous
+echo 0x02 > bDeviceSubClass   # Common Class
+echo 0x01 > bDeviceProtocol   # Interface Association Descriptor
+
 # Stable serial (and thus stable MACs) from the board serial so the host
 # does not hand out a fresh DHCP lease on every reboot.
 SERIAL="$(tr -d '\0' < /proc/device-tree/serial-number 2>/dev/null || true)"
@@ -69,7 +75,9 @@ echo "${SERIAL}"   > strings/0x409/serialnumber
 
 mkdir -p configs/c.1/strings/0x409
 echo "Pi Cam (${MODE})" > configs/c.1/strings/0x409/configuration
-echo 250 > configs/c.1/MaxPower
+echo 0x80 > configs/c.1/bmAttributes   # 0x80 bus-powered, 0xC0 self-powered
+echo 500  > configs/c.1/MaxPower       # mA
+
 
 # --- CDC-NCM network function -----------------------------------------
 build_ncm() {
@@ -124,7 +132,7 @@ build_uvc() {
 	# high-bandwidth iso (>1 transaction/microframe), which the Pi's dwc2 UDC
 	# does NOT support in device mode (it then underruns on every request and
 	# pins a core at 100%).
-	UVC_MAXPACKET=1024
+	UVC_MAXPACKET=2048
 
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
@@ -142,9 +150,11 @@ build_uvc() {
 		mkdir -p "${frm}"
 		echo "${w}" > "${frm}/wWidth"
 		echo "${h}" > "${frm}/wHeight"
-		echo "$(( w * h ))" > "${frm}/dwMaxVideoFrameBufferSize"
-		echo 333333 > "${frm}/dwDefaultFrameInterval"
-		printf '%s\n' 333333 666666 1000000 2000000 2500000 5000000 10000000 > "${frm}/dwFrameInterval"
+		echo "$(( w * h * 2 ))" > "${frm}/dwMaxVideoFrameBufferSize"
+		echo "$((w * h * 2 * 8 * 30 / 10))" > "${frm}/dwMaxBitRate"     # bit/s bei 30fps
+  		echo "$((w * h * 2 * 8 * 5 / 10))"  > "${frm}/dwMinBitRate"     # bit/s bei 5fps
+		echo 1000000 > "${frm}/dwDefaultFrameInterval"
+		printf '%s\n' 333333 416666 500000 666666 1000000 2000000 > "${frm}/dwFrameInterval"
 		[ "${w}x${h}" = "1280x720" ] && default_idx="${idx}"
 	done
 	# Default to 720p where present (safe, widely supported).
