@@ -1,0 +1,9 @@
+# Allow the rpi-camera service user to run the two-stage frame watchdog's
+# recovery actions (meltingplot.rpi_camera.server) without a password: it
+# first restarts the service to recover a wedged libcamera pipeline, and only
+# reboots if that fails to restore frames. Both commands are pinned to exact
+# argv, so this grants nothing else (no general root shell, no other units).
+# Without this the watchdog falls back to the distro's blanket NOPASSWD, which
+# a hardened image may not have.
+# FIRST_USER_NAME is substituted at image build time (stage2/05-rpi-camera/00-run.sh).
+FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemctl restart rpi-camera.service, /usr/sbin/reboot
