@@ -111,13 +111,26 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	#   single-core Pi Zero / Zero W -> up to 720p   (ARMv6, mem + CPU bound)
 	#   Pi Zero 2 W                  -> up to 1080p
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
+	#
+	# UVC_INTERVAL is the iso endpoint bInterval: it is serviced every
+	# 2^(bInterval-1) microframes, so it costs ~8000/2^(bInterval-1)
+	# interrupts/sec. bInterval=1 (every microframe, 8000 int/s) buries the
+	# single-core ARMv6 Pi Zero in softirqs (~50-70% sys CPU, ~23k ctxsw/s)
+	# even at idle/low fps. Raise it there to thin the interrupt storm; the
+	# multi-core boards absorb 8000 int/s fine and need the bandwidth for
+	# their larger frames, so they stay at 1.
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 	if echo "${MODEL}" | grep -q 'Zero 2'; then
 		FRAMES="640x480 1280x720 1920x1080"
+		UVC_INTERVAL=1
 	elif echo "${MODEL}" | grep -q 'Zero'; then
 		FRAMES="640x480 1280x720"
+		# bInterval 3 = every 4 microframes => ~2000 int/s, ~2 MB/s, which
+		# carries the 720p cap above (the pump paces fps anyway).
+		UVC_INTERVAL=3
 	else
 		FRAMES="640x480 1280x720 1920x1080 2304x1296 4608x2592"
+		UVC_INTERVAL=1
 	fi
 	# Single-transaction iso: 1024 B/microframe => 8000 * 1024 ~= 8 MB/s at
 	# bInterval 1, above the ~7.5 MB/s a 1080p30 MJPEG stream needs. Larger
@@ -185,15 +198,15 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 		|| echo "rpi-cam-gadget: warn: could not set CT bmControls" >&2; }
 
 	echo "${UVC_MAXPACKET}" > "${UVC}/streaming_maxpacket"
-	# Service the iso endpoint every microframe (bInterval = 1) so the bus can
-	# carry the largest advertised frame. Frame *rate* is paced in userspace by
-	# frame availability (uvc_gadget.py), NOT by starving the bus, so this stays
-	# fixed: at low fps the endpoint simply sends idle packets instead of the
-	# gadget re-transmitting duplicate frames and burning CPU.
-	echo 1 > "${UVC}/streaming_interval"
+	# bInterval of the iso streaming endpoint (see UVC_INTERVAL above). Frame
+	# *rate* is paced in userspace by frame availability (uvc_gadget.py); this
+	# only sets how often dwc2 services the endpoint, i.e. the interrupt rate.
+	# Contrary to intuition, a busier endpoint at idle is NOT free — every
+	# service is an interrupt, so on the single-core Pi Zero this is raised.
+	echo "${UVC_INTERVAL}" > "${UVC}/streaming_interval"
 
 	ln -s "${GADGET}/${UVC}" configs/c.1/
-	echo "rpi-cam-gadget: UVC frames [${FRAMES}], default #${default_idx}, streaming_interval=1"
+	echo "rpi-cam-gadget: UVC frames [${FRAMES}], default #${default_idx}, streaming_interval=${UVC_INTERVAL}"
 fi
 
 # Bind the composite gadget to the UDC. The UVC /dev/videoN node appears
