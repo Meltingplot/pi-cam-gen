@@ -1,6 +1,9 @@
 [Unit]
 Description=Grace period before UVC->NCM gadget fallback
-ConditionPathExists=/run/rpi-cam-gadget.enabled
+# No ConditionPathExists here: the timer is armed by timers.target early in
+# boot, possibly before rpi-cam-gadget-detect.service writes the .enabled flag,
+# which would skip the timer entirely. The gate lives on the *service* it
+# triggers (which is ordered After= detect), so a non-OTG board still no-ops.
 
 [Timer]
 # 30 s after boot: long enough for rpi-camera to start and for a host to open
