@@ -113,50 +113,84 @@ build_uvc() {
 	#   Pi Zero 2 W                  -> up to 1080p
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
 	#
-	# UVC_INTERVAL is the iso endpoint bInterval: it is serviced every
-	# 2^(bInterval-1) microframes, so it costs ~8000/2^(bInterval-1)
-	# interrupts/sec. bInterval=1 (every microframe, 8000 int/s) buries the
-	# single-core ARMv6 Pi Zero in softirqs even at idle; raise it there.
-	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
-	if echo "${MODEL}" | grep -q 'Zero 2'; then
-		FRAMES="640x480 1280x720 1920x1080"
-		UVC_INTERVAL=1
-	elif echo "${MODEL}" | grep -q 'Zero'; then
-		FRAMES="640x480 1280x720"
-		UVC_INTERVAL=3
-	else
-		FRAMES="640x480 1280x720 1920x1080 2304x1296 4608x2592"
-		UVC_INTERVAL=1
-	fi
 	# Single-transaction iso, MUST stay <= 1024: a value >1024 forces
 	# high-bandwidth iso (>1 transaction/microframe), which the Pi's dwc2 UDC
 	# does NOT support in device mode (it then underruns on every request and
 	# pins a core at 100%).
-	UVC_MAXPACKET=2048
+	UVC_MAXPACKET=1024
 
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
 
-	# One frame descriptor per advertised size. dwMaxVideoFrameBufferSize is a
-	# 1 byte/pixel MJPEG ceiling (matches the pump's buffer sizing). Each frame
-	# advertises the same interval list (100 ns units): 30/15/10/5/4/2/1 fps.
+	# create_frame WIDTH HEIGHT FORMAT FPS [FPS...]
+	#
+	# Adds one frame descriptor to the named streaming format instance
+	# (e.g. "mjpeg"). The frame is advertised for every FPS given; the first
+	# FPS is the default rate. dwMaxVideoFrameBufferSize / dw{Max,Min}BitRate
+	# assume a 1 byte/pixel MJPEG ceiling (matches the pump's buffer sizing).
+	# Frames are numbered in call order so bFrameIndex follows creation order;
+	# 1280x720 (where present) is recorded as the gadget's default frame.
 	idx=0
 	default_idx=1
-	for res in ${FRAMES}; do
+	FRAMES=
+	create_frame() {
+		w="$1"; h="$2"; fmt="$3"; shift 3
 		idx=$(( idx + 1 ))
-		w="${res%x*}"; h="${res#*x}"
+		FRAMES="${FRAMES:+${FRAMES} }${w}x${h}"
+
 		# Zero-padded name so the lexical order matches bFrameIndex order.
-		frm="$(printf '%s/streaming/mjpeg/m/%04dx%04d' "${UVC}" "${w}" "${h}")"
+		frm="$(printf '%s/streaming/%s/m/%04dx%04d' "${UVC}" "${fmt}" "${w}" "${h}")"
 		mkdir -p "${frm}"
 		echo "${w}" > "${frm}/wWidth"
 		echo "${h}" > "${frm}/wHeight"
 		echo "$(( w * h * 2 ))" > "${frm}/dwMaxVideoFrameBufferSize"
-		echo "$((w * h * 2 * 8 * 30 / 10))" > "${frm}/dwMaxBitRate"     # bit/s bei 30fps
-  		echo "$((w * h * 2 * 8 * 5 / 10))"  > "${frm}/dwMinBitRate"     # bit/s bei 5fps
-		echo 1000000 > "${frm}/dwDefaultFrameInterval"
-		printf '%s\n' 333333 416666 500000 666666 1000000 2000000 > "${frm}/dwFrameInterval"
+
+		# Frame intervals in 100 ns units; track the fps span for the bitrates.
+		max_fps="$1"; min_fps="$1"; intervals=
+		for fps in "$@"; do
+			[ "${fps}" -gt "${max_fps}" ] && max_fps="${fps}"
+			[ "${fps}" -lt "${min_fps}" ] && min_fps="${fps}"
+			intervals="${intervals} $(( 10000000 / fps ))"
+		done
+		echo "$(( w * h * 2 * 8 * max_fps / 10 ))" > "${frm}/dwMaxBitRate"   # bit/s
+		echo "$(( w * h * 2 * 8 * min_fps / 10 ))" > "${frm}/dwMinBitRate"   # bit/s
+		echo "$(( 10000000 / $1 ))" > "${frm}/dwDefaultFrameInterval"
+		printf '%s\n' ${intervals} > "${frm}/dwFrameInterval"
+
 		[ "${w}x${h}" = "1280x720" ] && default_idx="${idx}"
-	done
+	}
+
+	# UVC_INTERVAL is the iso endpoint bInterval: it is serviced every
+	# 2^(bInterval-1) microframes, so it costs ~8000/2^(bInterval-1)
+	# interrupts/sec. bInterval=1 (every microframe, 8000 int/s) buries the
+	# single-core ARMv6 Pi Zero in softirqs even at idle; raise it there.
+	#
+	# The largest frame is bounded per board to what the hardware can stream:
+	#   single-core Pi Zero / Zero W -> up to 720p   (ARMv6, mem + CPU bound)
+	#   Pi Zero 2 W                  -> up to 1080p
+	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
+	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
+	if echo "${MODEL}" | grep -q 'Zero 2'; then
+		UVC_INTERVAL=1
+		UVC_MAXPACKET=2048
+		create_frame  640  480 mjpeg 30 24 20 15 10 5
+		create_frame 1280  720 mjpeg 30 24 20 15 10 5
+		create_frame 1920 1080 mjpeg 24 20 15 10 5
+	elif echo "${MODEL}" | grep -q 'Zero'; then
+		UVC_INTERVAL=2
+		UVC_MAXPACKET=1024
+		create_frame  640  480 mjpeg 20 15 10 5
+		create_frame 1280  720 mjpeg 10 5
+	else
+		UVC_INTERVAL=1
+		UVC_MAXPACKET=3072
+		create_frame  640  480 mjpeg 30 24 20 15 10 5
+		create_frame 1280  720 mjpeg 30 24 20 15 10 5
+		create_frame 1920 1080 mjpeg 30 24 20 15 10 5
+		create_frame 2304 1296 mjpeg 30 24 20 15 10 5
+		create_frame 4608 2592 mjpeg 10 5
+	fi
+
 	# Default to 720p where present (safe, widely supported).
 	echo "${default_idx}" > "${UVC}/streaming/mjpeg/m/bDefaultFrameIndex"
 
