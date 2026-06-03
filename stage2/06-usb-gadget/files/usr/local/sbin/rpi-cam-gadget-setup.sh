@@ -31,13 +31,24 @@ if [ ! -d "${CONFIGFS}/usb_gadget" ]; then
 	exit 1
 fi
 
-# Fully tear down any previous gadget so this script is re-runnable (and can
-# switch modes at runtime). Order matters in configfs: unbind the UDC, drop the
+# Tear down any previous gadget so this script is re-runnable (and can switch
+# modes at runtime). Order matters in configfs: unbind the UDC, drop the
 # config->function links + config dirs deepest-first, then the function
 # symlinks + dirs, then strings.
+#
+# Only disturb the UDC if a gadget is ACTUALLY bound: unbinding pulls the USB
+# pullup and resets dwc2, and rebinding too soon after can catch the controller
+# mid-reset and leave the high-speed PHY wedged (the host then sees a
+# full-speed device). So skip the unbind on a fresh boot (nothing bound), and
+# when we do unbind, wait for dwc2 to settle before rebuilding.
+GADGET_SETTLE_SEC="${GADGET_SETTLE_SEC:-1}"
 teardown_gadget() {
 	[ -d "${GADGET}" ] || return 0
-	echo "" > "${GADGET}/UDC" 2>/dev/null || true
+	if [ -n "$(cat "${GADGET}/UDC" 2>/dev/null | tr -d '[:space:]' || true)" ]; then
+		echo "rpi-cam-gadget: unbinding existing gadget, settling ${GADGET_SETTLE_SEC}s"
+		echo "" > "${GADGET}/UDC" 2>/dev/null || true
+		sleep "${GADGET_SETTLE_SEC}"
+	fi
 	find "${GADGET}"/configs -type l -delete 2>/dev/null || true
 	find "${GADGET}"/configs -mindepth 1 -depth -type d -exec rmdir {} + 2>/dev/null || true
 	find "${GADGET}"/functions -type l -delete 2>/dev/null || true
@@ -81,11 +92,6 @@ echo 500  > configs/c.1/MaxPower       # mA
 
 # --- CDC-NCM network function -----------------------------------------
 build_ncm() {
-	# IAD device class so the CDC-NCM function binds cleanly on Windows too.
-	echo 0xEF > bDeviceClass
-	echo 0x02 > bDeviceSubClass
-	echo 0x01 > bDeviceProtocol
-
 	# Locally-administered MACs from the last 10 hex digits of the serial.
 	# Host and device get a different first octet so they never clash.
 	S="$(printf '%s' "${SERIAL}" | tail -c 10)"
