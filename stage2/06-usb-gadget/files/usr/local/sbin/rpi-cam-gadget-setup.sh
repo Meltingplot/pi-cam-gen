@@ -119,10 +119,17 @@ if [ "${GADGET_ENABLE_UVC}" = "1" ]; then
 	else
 		FRAMES="640x480 1280x720 1920x1080 2304x1296 4608x2592"
 	fi
-	# High-bandwidth iso: 2048 B/microframe => 8000 * 2048 ~= 16 MB/s at
-	# bInterval 1, comfortably above the ~7.5 MB/s a 1080p30 MJPEG stream
-	# needs. Fixed for every frame — see streaming_interval below.
-	UVC_MAXPACKET=2048
+	# Single-transaction iso: 1024 B/microframe => 8000 * 1024 ~= 8 MB/s at
+	# bInterval 1, above the ~7.5 MB/s a 1080p30 MJPEG stream needs. Larger
+	# frames simply take more microframes to drain (the pump paces fps anyway).
+	#
+	# MUST stay <= 1024: a value >1024 forces *high-bandwidth* isochronous
+	# (mult>1, i.e. >1 transaction/microframe via the wMaxPacketSize mult bits),
+	# which the Pi's dwc2 UDC does NOT support in device mode. The endpoint then
+	# underruns on every request (uvc: "VS request completed with status -61"
+	# == -ENODATA), the gadget re-queues in a tight loop, and the kernel pins a
+	# core at 100% — starving the userspace pump (HTTP dies, frames stop).
+	UVC_MAXPACKET=1024
 
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
