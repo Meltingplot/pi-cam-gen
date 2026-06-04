@@ -56,11 +56,9 @@ dtoverlay=dwc2,dr_mode=host
 # peripheral when attached to a host, and the gadget enumerates at high speed.
 # (The "Mode Mismatch Interrupt" lines seen in otg are benign.)
 [pi0]
-# Pi Zero / Zero W — micro-USB is the OTG port.
-dtoverlay=dwc2,dr_mode=otg
-
-[pi02]
-# Pi Zero 2 W — micro-USB is the OTG port.
+# Pi Zero family — micro-USB is the OTG port. [pi0] matches Zero, Zero W AND
+# Zero 2 W, so there is intentionally NO separate [pi02] section: adding one
+# would make the firmware apply the dwc2 overlay twice on the Zero 2 W.
 dtoverlay=dwc2,dr_mode=otg
 
 [pi4]
