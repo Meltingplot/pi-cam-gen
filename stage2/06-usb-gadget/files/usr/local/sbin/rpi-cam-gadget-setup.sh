@@ -111,7 +111,7 @@ build_uvc() {
 	# Advertised frame sizes (ascending — the order IS the UVC bFrameIndex).
 	# MUST match gadget_frames() in rpi-camera's uvc_gadget.py. The largest
 	# frame is bounded per board to what the hardware can sensibly stream:
-	#   single-core Pi Zero / Zero W -> up to 1080p  (rate-capped to 20 fps)
+	#   single-core Pi Zero / Zero W -> up to 720p   (1080p too slow over USB UVC)
 	#   Pi Zero 2 W                  -> up to 1080p (up to 30 fps)
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
 	#
@@ -202,7 +202,7 @@ build_uvc() {
 	# single-core ARMv6 Pi Zero in softirqs even at idle; raise it there.
 	#
 	# The largest frame is bounded per board to what the hardware can stream:
-	#   single-core Pi Zero / Zero W -> up to 1080p  (rate-capped to 20 fps)
+	#   single-core Pi Zero / Zero W -> up to 720p   (1080p too slow over USB UVC)
 	#   Pi Zero 2 W                  -> up to 1080p (up to 30 fps)
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
@@ -213,16 +213,15 @@ build_uvc() {
 		create_frame 1280  720 mjpeg 30 24 20 15 10 5
 		create_frame 1920 1080 mjpeg 24 20 15 10 5
 	elif echo "${MODEL}" | grep -q 'Zero'; then
-		# Single-core ARMv6 Zero / Zero W. Capture/ISP/MJPEG-encode are
-		# hardware+DMA (not CPU), so resolution is cheap — 1080p streams fine.
-		# The cost that scales is per-frame work (pump memcpy + iso servicing),
-		# which is FPS-bound: 30 fps pins the one core at 100% even at 640x480,
-		# so cap the advertised rate at 20.
+		# Single-core ARMv6 Zero / Zero W. 1080p over USB UVC is too slow on
+		# one core, so the gadget advertises up to 720p only; 30 fps pins the
+		# core even at 640x480, so cap the rate at 20. NOTE: this limits only
+		# the USB webcam — the HTTP/web stream is NOT constrained by this list
+		# and can still serve 1080p.
 		UVC_INTERVAL=2
 		UVC_MAXPACKET=2048
 		create_frame  640  480 mjpeg 20 15 10 5
 		create_frame 1280  720 mjpeg 20 15 10 5
-		create_frame 1920 1080 mjpeg 20 15 10 5
 	else
 		UVC_INTERVAL=1
 		UVC_MAXPACKET=2048   # HB-iso; verified on Zero 2 W (see note above)
