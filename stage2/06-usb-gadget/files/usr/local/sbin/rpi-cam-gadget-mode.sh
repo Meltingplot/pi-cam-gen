@@ -36,6 +36,17 @@ init)
 	else
 		mode=uvc
 	fi
+	# dwc2 sizes its RX FIFO from the FIRST gadget bound after a cold boot and
+	# keeps it across rebinds. A UVC-first bind computes an RX FIFO larger than
+	# the controller's SPRAM (regardless of maxpacket), which leaves ep0's TX
+	# FIFO out of bounds -> ep0 can't answer enumeration -> the host drops to
+	# full-speed and fails. NCM computes a small RX that fits. So for UVC, bind
+	# NCM once to prime dwc2's FIFO, then rebuild as UVC (which inherits the
+	# small FIFO and enumerates high-speed). Set GADGET_PRIME=0 to skip.
+	if [ "${mode}" = uvc ] && [ "${GADGET_PRIME:-1}" = 1 ]; then
+		log "priming dwc2 RX FIFO via NCM before UVC"
+		"${SETUP}" ncm || log "warn: NCM prime failed; continuing to UVC anyway"
+	fi
 	"${SETUP}" "${mode}"
 	echo "${mode}" > "${MODE_FILE}"
 	;;

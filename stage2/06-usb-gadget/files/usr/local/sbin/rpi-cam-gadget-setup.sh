@@ -194,7 +194,7 @@ build_uvc() {
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 	if echo "${MODEL}" | grep -q 'Zero 2'; then
 		UVC_INTERVAL=1
-		UVC_MAXPACKET=2048
+		UVC_MAXPACKET=1024   # MUST stay <=1024: dwc2 has no high-bandwidth iso
 		create_frame  640  480 mjpeg 30 24 20 15 10 5
 		create_frame 1280  720 mjpeg 30 24 20 15 10 5
 		create_frame 1920 1080 mjpeg 24 20 15 10 5
@@ -205,7 +205,7 @@ build_uvc() {
 		create_frame 1280  720 mjpeg 10 5
 	else
 		UVC_INTERVAL=1
-		UVC_MAXPACKET=3072
+		UVC_MAXPACKET=1024   # MUST stay <=1024: dwc2 has no high-bandwidth iso
 		create_frame  640  480 mjpeg 30 24 20 15 10 5
 		create_frame 1280  720 mjpeg 30 24 20 15 10 5
 		create_frame 1920 1080 mjpeg 30 24 20 15 10 5
