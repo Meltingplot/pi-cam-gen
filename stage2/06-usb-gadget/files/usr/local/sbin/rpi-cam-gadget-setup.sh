@@ -119,11 +119,13 @@ build_uvc() {
 	#   Pi Zero 2 W                  -> up to 1080p
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
 	#
-	# Single-transaction iso, MUST stay <= 1024: a value >1024 forces
-	# high-bandwidth iso (>1 transaction/microframe), which the Pi's dwc2 UDC
-	# does NOT support in device mode (it then underruns on every request and
-	# pins a core at 100%).
-	UVC_MAXPACKET=1024
+	# Iso endpoint wMaxPacketSize. 2048 (high-bandwidth iso, 2 transactions per
+	# microframe) is what the host actually negotiates and is verified working
+	# on the Pi Zero 2 W; the earlier "dwc2 can't do high-bandwidth iso, keep
+	# <=1024" claim was a misdiagnosis (the real cause of the bad behaviour was
+	# the pump opening the wrong V4L2 node, not the packet size). Default 2048;
+	# each board tier may override below.
+	UVC_MAXPACKET=2048
 
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
@@ -210,18 +212,18 @@ build_uvc() {
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 	if echo "${MODEL}" | grep -q 'Zero 2'; then
 		UVC_INTERVAL=1
-		UVC_MAXPACKET=1024   # MUST stay <=1024: dwc2 has no high-bandwidth iso
+		UVC_MAXPACKET=2048   # HB-iso; verified on Zero 2 W (see note above)
 		create_frame  640  480 mjpeg 30 24 20 15 10 5
 		create_frame 1280  720 mjpeg 30 24 20 15 10 5
 		create_frame 1920 1080 mjpeg 24 20 15 10 5
 	elif echo "${MODEL}" | grep -q 'Zero'; then
 		UVC_INTERVAL=2
-		UVC_MAXPACKET=1024
+		UVC_MAXPACKET=2048
 		create_frame  640  480 mjpeg 20 15 10 5
 		create_frame 1280  720 mjpeg 10 5
 	else
 		UVC_INTERVAL=1
-		UVC_MAXPACKET=1024   # MUST stay <=1024: dwc2 has no high-bandwidth iso
+		UVC_MAXPACKET=2048   # HB-iso; verified on Zero 2 W (see note above)
 		create_frame  640  480 mjpeg 30 24 20 15 10 5
 		create_frame 1280  720 mjpeg 30 24 20 15 10 5
 		create_frame 1920 1080 mjpeg 30 24 20 15 10 5
