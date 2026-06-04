@@ -1,0 +1,20 @@
+[Unit]
+Description=Reboot on lost WiFi (safety watchdog)
+After=network.target NetworkManager.service
+
+# Shipped DISABLED (no [Install] wants symlink is created by the image). The
+# rpi-camera web UI enables/disables it at runtime via systemctl enable/disable
+# --now (see /etc/sudoers.d/rpi-camera-wifi-watchdog).
+
+[Service]
+ExecStart=/usr/local/sbin/reboot_on_wifi_disconnect.sh
+Restart=always
+User=root
+Type=simple
+Environment=WIFI_IFACE=wlan0
+Environment=GATEWAY=10.42.0.1
+Environment=PING_FAILURES_BEFORE_REBOOT=30
+Environment=INITIAL_ASSOCIATION_TIMEOUT=120
+
+[Install]
+WantedBy=multi-user.target

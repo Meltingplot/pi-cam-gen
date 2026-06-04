@@ -1,0 +1,6 @@
+# Let the rpi-camera service user enable/disable the WiFi safety watchdog from
+# the web UI without a password. Pinned to exact argv (enable/disable --now of
+# that one unit), so it grants nothing else — no general root shell, no other
+# units. `systemctl is-enabled/is-active` are read-only and need no sudo.
+# FIRST_USER_NAME is substituted at image build time (02-run.sh).
+FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemctl enable --now reboot_on_wifi_disconnect.service, /usr/bin/systemctl disable --now reboot_on_wifi_disconnect.service
