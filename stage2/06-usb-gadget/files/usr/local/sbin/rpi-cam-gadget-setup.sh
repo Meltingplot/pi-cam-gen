@@ -179,7 +179,14 @@ build_uvc() {
 		echo "$(( 10000000 / $1 ))" > "${frm}/dwDefaultFrameInterval"
 		printf '%s\n' ${intervals} > "${frm}/dwFrameInterval"
 
-		[ "${w}x${h}" = "1280x720" ] && default_idx="${idx}"
+		# NB: must be an `if`, not `[ ... ] && ...`. As the function's LAST
+		# command a bare `&&` test returns its own (false) status for every
+		# non-720p frame, and under `set -e` that aborts the whole script after
+		# the first create_frame call — leaving a half-built one-frame gadget
+		# that never binds. An `if` with no else always returns 0.
+		if [ "${w}x${h}" = "1280x720" ]; then
+			default_idx="${idx}"
+		fi
 	}
 
 	# UVC_INTERVAL is the iso endpoint bInterval: it is serviced every
@@ -235,13 +242,17 @@ build_uvc() {
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/ss/h"
 
 	# Advertise the camera controls the rpi-camera pump maps to libcamera.
-	# Guarded: an older kernel without writable bmControls still comes up.
+	# Best-effort: the Pi's downstream f_uvc keeps these default-entity
+	# bmControls READ-ONLY (the write returns EIO), so on the Pi the gadget
+	# falls back to the kernel defaults (PU=Brightness, CT=Auto-Exposure-Mode)
+	# — both of which the pump's UvcControlBridge services, so nothing stalls.
+	# The widths MUST match the kernel arrays: PU is 2 bytes, CT is 3.
 	pu_bm="${UVC}/control/processing/default/bmControls"
 	ct_bm="${UVC}/control/terminal/camera/default/bmControls"
-	[ -e "${pu_bm}" ] && { echo 0x1b 0x12 0x00 > "${pu_bm}" 2>/dev/null \
-		|| echo "rpi-cam-gadget: warn: could not set PU bmControls" >&2; }
+	[ -e "${pu_bm}" ] && { echo 0x1b 0x12 > "${pu_bm}" 2>/dev/null \
+		|| echo "rpi-cam-gadget: warn: PU bmControls read-only; using kernel defaults" >&2; }
 	[ -e "${ct_bm}" ] && { echo 0x2a 0x00 0x02 > "${ct_bm}" 2>/dev/null \
-		|| echo "rpi-cam-gadget: warn: could not set CT bmControls" >&2; }
+		|| echo "rpi-cam-gadget: warn: CT bmControls read-only; using kernel defaults" >&2; }
 
 	echo "${UVC_MAXPACKET}" > "${UVC}/streaming_maxpacket"
 	echo "${UVC_INTERVAL}"  > "${UVC}/streaming_interval"
