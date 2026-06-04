@@ -209,6 +209,12 @@ build_uvc() {
 
 	# Control header links into fs/ss (the kernel exposes no hs dir for control).
 	mkdir -p "${UVC}/control/header/h"
+	# VideoControl clock the payload-header timestamps reference. Set it
+	# explicitly so it is deterministic and matches the dwClockFrequency the
+	# rpi-camera pump reports in PROBE/COMMIT (uvc_gadget.py reads this back).
+	# Guarded: an older kernel without the attribute still brings the gadget up.
+	[ -e "${UVC}/control/header/h/dwClockFrequency" ] && { echo 48000000 > "${UVC}/control/header/h/dwClockFrequency" 2>/dev/null \
+		|| echo "rpi-cam-gadget: warn: could not set dwClockFrequency" >&2; }
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/fs/h"
 	ln -s "${GADGET}/${UVC}/control/header/h" "${UVC}/control/class/ss/h"
 
