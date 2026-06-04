@@ -173,7 +173,37 @@ jobs:
                   "devices": devices,
               }
 
+          # The selectable Raspberry Pi device menu (imager.devices), copied
+          # from the official catalog. Without it, rpi-imager has no device
+          # filter for our --repo and the image shows under no device. The os
+          # entry's "devices" tags (pi1/pi3/pi4-32bit) decide which of these
+          # the image actually appears for.
+          icon = "https://downloads.raspberrypi.com/imager/icons/%s.png"
+          imager_devices = [
+              {"name": "Raspberry Pi 5", "tags": ["pi5-64bit", "pi5-32bit"], "icon": icon % "RPi_5",
+               "description": "Raspberry Pi 5, 500 / 500+, and Compute Module 5",
+               "matching_type": "exclusive", "capabilities": []},
+              {"name": "Raspberry Pi 4", "tags": ["pi4-64bit", "pi4-32bit"], "default": False, "icon": icon % "RPi_4",
+               "description": "Raspberry Pi 4 Model B, 400, and Compute Module 4 / 4S",
+               "matching_type": "inclusive", "capabilities": []},
+              {"name": "Raspberry Pi 3", "tags": ["pi3-64bit", "pi3-32bit"], "default": False, "icon": icon % "RPi_3",
+               "description": "Raspberry Pi 3 Model A+ / B / B+ and Compute Module 3 / 3+",
+               "matching_type": "inclusive", "capabilities": []},
+              {"name": "Raspberry Pi 2", "tags": ["pi2-32bit"], "default": False, "icon": icon % "RPi_2",
+               "description": "Raspberry Pi 2 Model B", "matching_type": "inclusive", "capabilities": []},
+              {"name": "Raspberry Pi 1", "tags": ["pi1-32bit"], "default": False, "icon": icon % "RPi_1B+",
+               "description": "Raspberry Pi 1 Model A / A+ / B / B+ and Compute Module 1",
+               "matching_type": "inclusive", "capabilities": []},
+              {"name": "Raspberry Pi Zero 2 W", "tags": ["pi3-64bit", "pi3-32bit"], "default": False, "icon": icon % "RPi_Zero_2_W",
+               "description": "Raspberry Pi Zero 2 W", "matching_type": "inclusive", "capabilities": []},
+              {"name": "Raspberry Pi Zero", "tags": ["pi1-32bit"], "default": False, "icon": icon % "RPi_Zero",
+               "description": "Raspberry Pi Zero, Zero W, and Zero WH", "matching_type": "inclusive", "capabilities": []},
+              {"name": "No filtering", "tags": [], "default": False,
+               "description": "Show every possible image", "matching_type": "inclusive", "capabilities": []},
+          ]
+
           catalog = {
+              "imager": {"devices": imager_devices},
               "os_list": [
                   {
                       "name": "Meltingplot Pi Camera",
