@@ -2,20 +2,16 @@
 
 # Install the USB gadget tree (scripts, systemd units, the NetworkManager usb0
 # profile and the locked-down sudoers entry) and enable the units. The gadget
-# presents ONE function at a time — UVC by default, switching to NCM if no host
-# opens the video stream (rpi-cam-gadget-mode.sh) or if the boot-partition flag
-# /boot/firmware/ncm-mode is present. Activation is gated at runtime by
+# is a composite UVC webcam + CDC-NCM network device (both functions presented
+# together; see rpi-cam-gadget-setup.sh). Activation is gated at runtime by
 # rpi-cam-gadget-detect.sh, so this is a no-op on non-OTG boards.
 
 install -m 755 files/usr/local/sbin/rpi-cam-gadget-detect.sh   "${ROOTFS_DIR}/usr/local/sbin/"
 install -m 755 files/usr/local/sbin/rpi-cam-gadget-setup.sh    "${ROOTFS_DIR}/usr/local/sbin/"
-install -m 755 files/usr/local/sbin/rpi-cam-gadget-mode.sh     "${ROOTFS_DIR}/usr/local/sbin/"
 install -m 750 files/usr/local/sbin/rpi-cam-gadget-rebind.sh   "${ROOTFS_DIR}/usr/local/sbin/"
 
 install -m 644 files/etc/systemd/system/rpi-cam-gadget-detect.service   "${ROOTFS_DIR}/etc/systemd/system/"
 install -m 644 files/etc/systemd/system/rpi-cam-gadget.service          "${ROOTFS_DIR}/etc/systemd/system/"
-install -m 644 files/etc/systemd/system/rpi-cam-gadget-fallback.service "${ROOTFS_DIR}/etc/systemd/system/"
-install -m 644 files/etc/systemd/system/rpi-cam-gadget-fallback.timer   "${ROOTFS_DIR}/etc/systemd/system/"
 
 install -d -m 700 "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
 install -m 600 files/etc/NetworkManager/system-connections/usb0-host.nmconnection \
@@ -42,5 +38,4 @@ visudo -cf /etc/sudoers.d/rpi-camera-gadget
 systemctl mask rpi-usb-gadget-ics.service
 systemctl enable rpi-cam-gadget-detect.service
 systemctl enable rpi-cam-gadget.service
-systemctl enable rpi-cam-gadget-fallback.timer
 EOF

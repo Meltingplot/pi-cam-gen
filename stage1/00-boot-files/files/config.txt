@@ -45,7 +45,7 @@ otg_mode=1
 [cm5]
 dtoverlay=dwc2,dr_mode=host
 
-# USB gadget (UVC webcam or CDC-NCM, one at a time — see rpi-cam-gadget-mode.sh).
+# USB gadget: composite UVC webcam + CDC-NCM network (see rpi-cam-gadget-setup.sh).
 # Only boards with a dedicated OTG port get this; Pi 3/3+ route USB through an
 # on-board hub (host-only) and are omitted.
 #
@@ -53,9 +53,8 @@ dtoverlay=dwc2,dr_mode=host
 # up the high-speed PHY in forced-peripheral mode — the device comes up
 # full-speed with a dead ep0 and the host's descriptor read times out
 # (DevSpd=full-speed in DSTS). otg does the full OTG bring-up and resolves to
-# peripheral when attached to a host, and single-function gadgets enumerate at
-# high speed. (The "Mode Mismatch Interrupt" lines seen in otg are benign for
-# single-function operation — they accompanied the unrelated composite failure.)
+# peripheral when attached to a host, and the gadget enumerates at high speed.
+# (The "Mode Mismatch Interrupt" lines seen in otg are benign.)
 [pi0]
 # Pi Zero / Zero W — micro-USB is the OTG port.
 dtoverlay=dwc2,dr_mode=otg

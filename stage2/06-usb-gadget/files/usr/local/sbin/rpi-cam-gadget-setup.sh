@@ -1,23 +1,19 @@
 #!/bin/bash
-# Build a SINGLE-FUNCTION USB gadget via configfs/libcomposite: either a UVC
-# webcam OR a CDC-NCM network device.
+# Build the composite USB gadget via configfs/libcomposite: a UVC webcam AND a
+# CDC-NCM network device, in one configuration, presented together.
 #
-# Why not both at once? A composite UVC+NCM gadget does NOT enumerate reliably
-# on the Pi's dwc2 UDC (it intermittently comes up full-speed with a dead ep0;
-# each function works fine on its own). So we run one function at a time and
-# switch between them at runtime — see rpi-cam-gadget-mode.sh: boot as UVC and
-# fall back to NCM if no host opens the video stream within a grace period.
+# History: this used to present ONE function at a time because the composite
+# gadget "wouldn't enumerate reliably on dwc2" (it came up full-speed with a
+# dead ep0). That was a misdiagnosis — the real cause was the userspace pump
+# opening the wrong V4L2 node, so the UVC endpoint was never configured and
+# dwc2 kept an oversized RX FIFO that overflowed the SPRAM -> full-speed. With
+# the pump on the right node, the composite enumerates high-speed with both
+# functions (NCM is linked first so its small bulk-OUT FIFO sizes the RX FIFO
+# before the UVC iso-IN endpoint).
 #
-# Usage: rpi-cam-gadget-setup.sh [uvc|ncm]   (default: $GADGET_MODE, else uvc)
-# Re-runnable: it fully tears down any existing gadget first, so it doubles as
-# the runtime mode-switch primitive.
+# Usage: rpi-cam-gadget-setup.sh
+# Re-runnable: it fully tears down any existing gadget first.
 set -eu
-
-MODE="${1:-${GADGET_MODE:-uvc}}"
-case "${MODE}" in
-	uvc|ncm) ;;
-	*) echo "rpi-cam-gadget: unknown mode '${MODE}' (expected uvc|ncm)" >&2; exit 2 ;;
-esac
 
 GADGET=/sys/kernel/config/usb_gadget/picam
 CONFIGFS=/sys/kernel/config
@@ -85,7 +81,7 @@ echo "Pi Cam"      > strings/0x409/product
 echo "${SERIAL}"   > strings/0x409/serialnumber
 
 mkdir -p configs/c.1/strings/0x409
-echo "Pi Cam (${MODE})" > configs/c.1/strings/0x409/configuration
+echo "Pi Cam" > configs/c.1/strings/0x409/configuration
 echo 0x80 > configs/c.1/bmAttributes   # 0x80 bus-powered, 0xC0 self-powered
 echo 500  > configs/c.1/MaxPower       # mA
 
@@ -272,12 +268,12 @@ build_uvc() {
 	echo "rpi-cam-gadget: built UVC gadget, frames [${FRAMES}], default #${default_idx}, streaming_interval=${UVC_INTERVAL}"
 }
 
-case "${MODE}" in
-	ncm) build_ncm ;;
-	uvc) build_uvc ;;
-esac
+# Link NCM first so it claims interfaces 0-1 (and its small bulk-OUT FIFO sizes
+# the dwc2 RX FIFO before the UVC iso-IN endpoint); UVC takes interfaces 2-3.
+build_ncm
+build_uvc
 
-# Bind the gadget to the UDC. The /dev/videoN node (UVC) or usb0 (NCM) appears
+# Bind the gadget to the UDC. The /dev/videoN (UVC) and usb0 (NCM) nodes appear
 # once this completes.
 udc="$(ls /sys/class/udc | head -n1)"
 if [ -z "${udc}" ]; then
@@ -285,4 +281,4 @@ if [ -z "${udc}" ]; then
 	exit 1
 fi
 echo "${udc}" > UDC
-echo "rpi-cam-gadget: bound ${MODE} gadget to UDC ${udc}"
+echo "rpi-cam-gadget: bound composite (UVC+NCM) gadget to UDC ${udc}"

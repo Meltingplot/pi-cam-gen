@@ -1,54 +1,61 @@
 # stage2/06-usb-gadget — notes & open items
 
-USB gadget (a **UVC webcam** OR a **CDC-NCM** network device — one at a time,
-not a composite) for OTG-capable boards (Pi Zero / Zero W, Zero 2 W, Pi 4;
+USB gadget: a **composite UVC webcam + CDC-NCM** network device (both functions
+presented together) for OTG-capable boards (Pi Zero / Zero W, Zero 2 W, Pi 4;
 Pi 5 on the future 64-bit image). Pi 3 / 3+ have no OTG port and are skipped at
 runtime by `rpi-cam-gadget-detect.sh`.
 
-## Why single-function (UVC ⇄ NCM switch, not a composite)
+## Composite works — the "it can't enumerate on dwc2" belief was a misdiagnosis
 
-A composite UVC+NCM gadget does **not** enumerate reliably on the Pi's dwc2
-UDC: it intermittently comes up full-speed with a dead ep0 (the host logs
-`device descriptor read … -110`; the device shows `Mode Mismatch Interrupt`
-and an over-allocated RX FIFO). Each function works perfectly **alone**;
-together they don't. This matches long-standing reports on the RPi forums —
-composite UVC+ethernet only "works" in narrow corners (Pi 4 / Ubuntu / ECM).
-So we run one function at a time and switch:
+For a long time this shipped one function at a time (boot UVC, fall back to NCM)
+because the composite gadget appeared to enumerate unreliably: it came up
+full-speed with a dead ep0 (`device descriptor read … -110`, an over-allocated
+RX FIFO `GRXFSIZ=0x1000`). The real cause was **not** dwc2 and **not** the
+composite — it was the userspace pump (`uvc_gadget.py` `find_device()`) opening
+the **wrong V4L2 node** (`bcm2835-isp` instead of the `g_uvc` gadget node). The
+UVC streaming endpoint was therefore never configured, so dwc2 kept its
+oversized default RX FIFO, overflowed the 4080-word SPRAM, and dropped to
+full-speed. Once the pump opens the correct node and sets a format, dwc2
+recomputes the FIFO (`GRXFSIZ=0x22e`=558, fits) and the device (re-)enumerates
+high-speed.
 
-- **Boot → UVC** by default (`rpi-cam-gadget-mode.sh init`).
-- If **no host opens the UVC stream within ~30 s** (`rpi-cam-gadget-fallback.timer`),
-  tear UVC down and bring up **NCM** so the host can pull the MJPEG/HTTP stream
-  over USB networking instead. "Stream opened" is detected by grepping the
-  rpi-camera journal for the pump's `USB host UVC stream started` line (no flag
-  file / RuntimeDirectory needed, so it works on any package version).
-- **Override:** drop a file named **`ncm-mode`** on the boot partition
-  (`/boot/firmware/ncm-mode`) to skip UVC and boot straight to NCM — pull the
-  SD card on any PC, create the file, done.
-- dwc2 runs in **`dr_mode=peripheral`** (deterministic gadget; `otg` left the
-  role to the floating ID pin and caused the mismatch storm).
+With that fixed, the composite enumerates high-speed with **both** functions:
 
-## What this stage ships today (repo A)
+- One configfs gadget links **NCM first** (interfaces 0–1) then **UVC**
+  (interfaces 2–3). NCM's bulk-OUT endpoint sizes the RX FIFO small before the
+  UVC iso-IN endpoint, so the FIFO fits the SPRAM from the first bind — no
+  full-speed window, no separate "prime" step, no fallback timer.
+- `rpi-cam-gadget-setup.sh` (no args) builds and binds it; the
+  `rpi-cam-gadget.service` oneshot runs it at boot.
+- dwc2 runs in **`dr_mode=otg`** (forced `peripheral` left the HS PHY wedged at
+  full-speed on the Zero 2 W; otg does the full bring-up and resolves to
+  peripheral when attached).
 
-- `[pi0]`/`[pi02]`/`[pi4]` dwc2 peripheral/otg sections in
+The earlier UVC⇄NCM mode-switch, the `rpi-cam-gadget-mode.sh` helper, the
+`-fallback` service/timer, and the `/boot/firmware/ncm-mode` flag are all
+**removed** — both functions are always present, so there is nothing to switch.
+
+## What this stage ships today
+
+- `[pi0]`/`[pi02]`/`[pi4]` dwc2 otg sections in
   `stage1/00-boot-files/files/config.txt`, plus
   `modules-load=dwc2,libcomposite` in `cmdline.txt`.
 - A board-detection oneshot that writes `/run/rpi-cam-gadget.enabled`
   or `.disabled`.
 - A gadget-setup oneshot that builds the composite gadget via
-  configfs/libcomposite: **CDC-NCM + UVC** (`GADGET_ENABLE_UVC=1`,
-  default on). UVC advertises a single MJPEG format at the board
-  resolution (720p on Zero/Zero W, 1080p else) following a known-good
-  configfs layout (fs/hs/ss streaming class, `streaming_maxpacket`),
-  then binds the UDC.
+  configfs/libcomposite: **CDC-NCM + UVC**. UVC advertises one MJPEG format
+  with several frame sizes per board (up to 720p on Zero/Zero W, 1080p on
+  Zero 2 W, 4608×2592 on Pi 4/5), each with its full advertised fps list, at
+  iso `streaming_maxpacket=2048` (high-bandwidth iso), then binds the UDC.
 - NetworkManager `usb0-host.nmconnection` (`method=shared`, 10.55.0.1/24).
-- A locked-down `rpi-cam-gadget-rebind.sh` + sudoers entry for a future
-  dynamic-resolution pump to re-bind the UDC (unused by the current
-  fixed-resolution MVP).
+- A locked-down `rpi-cam-gadget-rebind.sh` + sudoers entry for the pump to
+  re-bind the UDC on a descriptor change (unused by the current fixed-descriptor
+  negotiation path).
 
-The rpi-camera service (>= 1.0.0rc11) runs `uvc_gadget.UvcGadget`, which
-auto-detects the output `/dev/videoN`, answers UVC PROBE/COMMIT and pumps
-the live MJPEG frames. NCM networking + the HTTP/MJPEG web stream keep
-working alongside UVC (picamera2 is the single camera owner).
+The rpi-camera service runs `uvc_gadget.UvcGadget`, which selects the `g_uvc`
+output node by its QUERYCAP driver string, answers UVC PROBE/COMMIT and pumps
+the live MJPEG frames. NCM networking + the HTTP/MJPEG web stream keep working
+alongside UVC (picamera2 is the single camera owner).
 
 ## DONE: `rpi-usb-gadget` Debian package audit (plan step 3)
 

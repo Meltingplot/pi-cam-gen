@@ -1,5 +1,5 @@
 [Unit]
-Description=Configure USB gadget (UVC by default, NCM via boot flag)
+Description=Configure the composite USB gadget (UVC webcam + CDC-NCM network)
 # Skipped (not failed) on boards without an OTG port: the detect service
 # only writes the .enabled flag for Zero/Zero 2 W/Pi 4/Pi 5.
 ConditionPathExists=/run/rpi-cam-gadget.enabled
@@ -11,7 +11,7 @@ Before=NetworkManager.service rpi-camera.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/rpi-cam-gadget-mode.sh init
+ExecStart=/usr/local/sbin/rpi-cam-gadget-setup.sh
 RemainAfterExit=yes
 
 [Install]
