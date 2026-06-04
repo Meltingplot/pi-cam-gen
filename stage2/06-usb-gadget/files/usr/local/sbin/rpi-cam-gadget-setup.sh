@@ -222,7 +222,13 @@ build_uvc() {
 		# core even at 640x480, so cap the rate at 20. NOTE: this limits only
 		# the USB webcam — the HTTP/web stream is NOT constrained by this list
 		# and can still serve 1080p.
-		UVC_INTERVAL=2
+		#
+		# bInterval=3: the iso endpoint is serviced every 2^(3-1)=4 microframes
+		# (~2000/s) instead of every 2 (~4000/s at interval 2). On the single
+		# core, interval 2 drove ~100% system time (dwc2 softirq) and made the
+		# board unresponsive; interval 3 halves that load and is still ample
+		# bandwidth for 720p@20 MJPEG (~1 MB/s).
+		UVC_INTERVAL=3
 		UVC_MAXPACKET=2048
 		create_frame  640  480 mjpeg 20 15 10 5
 		create_frame 1280  720 mjpeg 20 15 10 5
