@@ -28,6 +28,12 @@ install -d -m 755 "${ROOTFS_DIR}/etc/NetworkManager/conf.d"
 install -m 644 files/etc/NetworkManager/conf.d/99-usb0-managed.conf \
 	"${ROOTFS_DIR}/etc/NetworkManager/conf.d/"
 
+# Captive-portal config for the usb0 shared-mode dnsmasq: hijack OS
+# connectivity-check hosts to the Pi so Windows/etc. pop up the webcam UI.
+install -d -m 755 "${ROOTFS_DIR}/etc/NetworkManager/dnsmasq-shared.d"
+install -m 644 files/etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf \
+	"${ROOTFS_DIR}/etc/NetworkManager/dnsmasq-shared.d/"
+
 # systemd drop-in: give NetworkManager CAP_CHOWN so its shared-mode
 # dnsmasq can chown the usb0 PID file (silences a warning on every connect).
 install -d -m 755 "${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d"
