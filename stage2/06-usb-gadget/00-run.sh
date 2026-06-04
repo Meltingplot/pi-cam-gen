@@ -17,6 +17,12 @@ install -d -m 700 "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
 install -m 600 files/etc/NetworkManager/system-connections/usb0-host.nmconnection \
 	"${ROOTFS_DIR}/etc/NetworkManager/system-connections/"
 
+# conf.d drop-in: force NM to MANAGE usb0 (some defaults leave the gadget
+# interface unmanaged, so the usb0-host profile never activates).
+install -d -m 755 "${ROOTFS_DIR}/etc/NetworkManager/conf.d"
+install -m 644 files/etc/NetworkManager/conf.d/99-usb0-managed.conf \
+	"${ROOTFS_DIR}/etc/NetworkManager/conf.d/"
+
 # systemd drop-in: give NetworkManager CAP_CHOWN so its shared-mode
 # dnsmasq can chown the usb0 PID file (silences a warning on every connect).
 install -d -m 755 "${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d"
