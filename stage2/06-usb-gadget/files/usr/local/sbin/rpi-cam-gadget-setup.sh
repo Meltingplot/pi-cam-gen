@@ -151,7 +151,8 @@ build_uvc() {
 	# Frames are numbered in call order so bFrameIndex follows creation order;
 	# 1280x720 (where present) is recorded as the gadget's default frame.
 	idx=0
-	default_idx=1
+	idx_720=
+	idx_1080=
 	FRAMES=
 	create_frame() {
 		w="$1"; h="$2"; fmt="$3"; shift 3
@@ -186,13 +187,15 @@ build_uvc() {
 			$(printf '%s\n' ${intervals})
 		EOF
 
-		# NB: must be an `if`, not `[ ... ] && ...`. As the function's LAST
-		# command a bare `&&` test returns its own (false) status for every
-		# non-720p frame, and under `set -e` that aborts the whole script after
-		# the first create_frame call — leaving a half-built one-frame gadget
-		# that never binds. An `if` with no else always returns 0.
+		# Remember the 720p / 1080p frame indices; the default frame is chosen
+		# from them after all frames exist (see below). NB: use `if`, never a
+		# bare `[ ... ] && ...` as the function's LAST command — under `set -e`
+		# a false test there aborts the whole script (an `if` returns 0).
 		if [ "${w}x${h}" = "1280x720" ]; then
-			default_idx="${idx}"
+			idx_720="${idx}"
+		fi
+		if [ "${w}x${h}" = "1920x1080" ]; then
+			idx_1080="${idx}"
 		fi
 	}
 
@@ -233,7 +236,13 @@ build_uvc() {
 		create_frame 4608 2592 mjpeg 10 5
 	fi
 
-	# Default to 720p where present (safe, widely supported).
+	# Default frame = 1080p where advertised, else 720p, else the first frame.
+	# This matches the camera's per-board boot resolution (rpi-camera
+	# server._default_resolution: 1080p on multi-core boards, 720p on the
+	# single-core Zero/Zero W), so a host that opens the stream at the gadget's
+	# default frame does NOT trigger a capture-pipeline resize (a brief frame
+	# stall + iso underruns). Keep in sync with _default_frame_index() there.
+	default_idx="${idx_1080:-${idx_720:-1}}"
 	echo "${default_idx}" > "${UVC}/streaming/mjpeg/m/bDefaultFrameIndex"
 
 	# Streaming header links the MJPEG format instance, then fs/hs/ss.
