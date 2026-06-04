@@ -177,7 +177,16 @@ build_uvc() {
 		echo "$(( w * h * 2 * 8 * max_fps / 10 ))" > "${frm}/dwMaxBitRate"   # bit/s
 		echo "$(( w * h * 2 * 8 * min_fps / 10 ))" > "${frm}/dwMinBitRate"   # bit/s
 		echo "$(( 10000000 / $1 ))" > "${frm}/dwDefaultFrameInterval"
-		printf '%s\n' ${intervals} > "${frm}/dwFrameInterval"
+		# Write ALL intervals in a SINGLE write(2). configfs replaces the
+		# dwFrameInterval list on every write, and bash's `printf '%s\n' a b c`
+		# emits one write PER argument — so it would keep only the last (the
+		# slowest rate, e.g. 5 fps). A heredoc/cat hands the whole
+		# newline-separated list to one write (the known-good configfs-gadget
+		# idiom). NB: <<- strips leading TABS only, so this block must stay
+		# tab-indented.
+		cat > "${frm}/dwFrameInterval" <<-EOF
+			$(printf '%s\n' ${intervals})
+		EOF
 
 		# NB: must be an `if`, not `[ ... ] && ...`. As the function's LAST
 		# command a bare `&&` test returns its own (false) status for every
