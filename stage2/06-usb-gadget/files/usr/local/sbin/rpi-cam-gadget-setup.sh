@@ -128,6 +128,22 @@ build_uvc() {
 	UVC=functions/uvc.usb0
 	mkdir -p "${UVC}"
 
+	# Optional bulk streaming endpoint (GADGET_UVC_TRANSFER=bulk) instead of the
+	# default isochronous. Bulk takes a different f_uvc code path with no
+	# periodic-bandwidth machinery; on the Zero 2 W the isoc UVC gadget is
+	# forced to full-speed by dwc2/f_uvc (NCM and bulk have no isoc endpoint),
+	# so this is the lever to test whether the isoc endpoint is the cause.
+	# Must be set before the function is linked into the config; guarded so a
+	# kernel without the attribute still builds (isoc).
+	if [ "${GADGET_UVC_TRANSFER:-isoc}" = "bulk" ]; then
+		if [ -e "${UVC}/streaming_transfer" ]; then
+			echo bulk > "${UVC}/streaming_transfer" \
+				&& echo "rpi-cam-gadget: UVC streaming_transfer=bulk"
+		else
+			echo "rpi-cam-gadget: warn: kernel has no streaming_transfer; staying isoc" >&2
+		fi
+	fi
+
 	# create_frame WIDTH HEIGHT FORMAT FPS [FPS...]
 	#
 	# Adds one frame descriptor to the named streaming format instance
