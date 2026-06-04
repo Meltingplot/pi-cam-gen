@@ -112,7 +112,7 @@ build_uvc() {
 	# MUST match gadget_frames() in rpi-camera's uvc_gadget.py. The largest
 	# frame is bounded per board to what the hardware can sensibly stream:
 	#   single-core Pi Zero / Zero W -> up to 720p   (1080p too slow over USB UVC)
-	#   Pi Zero 2 W                  -> up to 1080p (up to 30 fps)
+	#   Pi Zero 2 W                  -> up to 2304x1296 (IMX708 binned, ~3MP)
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
 	#
 	# Iso endpoint wMaxPacketSize. 2048 (high-bandwidth iso, 2 transactions per
@@ -203,7 +203,7 @@ build_uvc() {
 	#
 	# The largest frame is bounded per board to what the hardware can stream:
 	#   single-core Pi Zero / Zero W -> up to 720p   (1080p too slow over USB UVC)
-	#   Pi Zero 2 W                  -> up to 1080p (up to 30 fps)
+	#   Pi Zero 2 W                  -> up to 2304x1296 (IMX708 binned, ~3MP)
 	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 	if echo "${MODEL}" | grep -q 'Zero 2'; then
@@ -212,6 +212,7 @@ build_uvc() {
 		create_frame  640  480 mjpeg 30 24 20 15 10 5
 		create_frame 1280  720 mjpeg 30 24 20 15 10 5
 		create_frame 1920 1080 mjpeg 24 20 15 10 5
+		create_frame 2304 1296 mjpeg 20 15 10 5   # IMX708 binned full-FoV (~3MP)
 	elif echo "${MODEL}" | grep -q 'Zero'; then
 		# Single-core ARMv6 Zero / Zero W. 1080p over USB UVC is too slow on
 		# one core, so the gadget advertises up to 720p only; 30 fps pins the
