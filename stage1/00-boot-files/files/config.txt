@@ -45,9 +45,10 @@ otg_mode=1
 [cm5]
 dtoverlay=dwc2,dr_mode=host
 
-# USB gadget: composite UVC webcam + CDC-NCM network (see rpi-cam-gadget-setup.sh).
-# Only boards with a dedicated OTG port get this; Pi 3/3+ route USB through an
-# on-board hub (host-only) and are omitted.
+# USB gadget: CDC-NCM network by default (the product is an IP camera); the
+# UVC webcam is opt-in via a 'uvc-enable' boot-partition flag. See
+# rpi-cam-gadget-setup.sh. Only boards with a dedicated OTG port get this;
+# Pi 3/3+ route USB through an on-board hub (host-only) and are omitted.
 #
 # dr_mode=otg (NOT peripheral): empirically the Zero 2 W's dwc2 fails to bring
 # up the high-speed PHY in forced-peripheral mode — the device comes up

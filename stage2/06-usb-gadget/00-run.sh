@@ -13,6 +13,11 @@ install -m 750 files/usr/local/sbin/rpi-cam-gadget-rebind.sh   "${ROOTFS_DIR}/us
 install -m 644 files/etc/systemd/system/rpi-cam-gadget-detect.service   "${ROOTFS_DIR}/etc/systemd/system/"
 install -m 644 files/etc/systemd/system/rpi-cam-gadget.service          "${ROOTFS_DIR}/etc/systemd/system/"
 
+# Shared per-board frame set — single source of truth for the UVC gadget
+# descriptors (rpi-cam-gadget-setup.sh) AND rpi-camera's web UI resolution list.
+install -d -m 755 "${ROOTFS_DIR}/etc/rpi-camera"
+install -m 644 files/etc/rpi-camera/frames.conf "${ROOTFS_DIR}/etc/rpi-camera/frames.conf"
+
 install -d -m 700 "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
 install -m 600 files/etc/NetworkManager/system-connections/usb0-host.nmconnection \
 	"${ROOTFS_DIR}/etc/NetworkManager/system-connections/"

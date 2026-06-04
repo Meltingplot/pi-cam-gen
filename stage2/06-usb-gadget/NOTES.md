@@ -1,14 +1,17 @@
 # stage2/06-usb-gadget — notes & open items
 
-USB gadget: a **composite UVC webcam + CDC-NCM** network device (both functions
-presented together) for OTG-capable boards (Pi Zero / Zero W, Zero 2 W, Pi 4;
-Pi 5 on the future 64-bit image). Pi 3 / 3+ have no OTG port and are skipped at
-runtime by `rpi-cam-gadget-detect.sh`.
+USB gadget for OTG-capable boards (Pi Zero / Zero W, Zero 2 W, Pi 4; Pi 5 on the
+future 64-bit image). Pi 3 / 3+ have no OTG port and are skipped at runtime by
+`rpi-cam-gadget-detect.sh`. **Default: CDC-NCM only** — the product is an IP
+camera (MJPEG/HTTP over WiFi or USB networking), so a network function is all it
+needs. The **UVC webcam is opt-in**: drop a file named `uvc-enable` on the boot
+partition and `rpi-cam-gadget-setup.sh` also builds the UVC function. It works
+fine (see below); it's off by default purely because its isochronous pump costs
+too much CPU on the small boards.
 
-## Composite works — the "it can't enumerate on dwc2" belief was a misdiagnosis
+## UVC composite works — the "it can't enumerate on dwc2" belief was a misdiagnosis
 
-For a long time this shipped one function at a time (boot UVC, fall back to NCM)
-because the composite gadget appeared to enumerate unreliably: it came up
+The UVC+NCM composite once appeared to enumerate unreliably: it came up
 full-speed with a dead ep0 (`device descriptor read … -110`, an over-allocated
 RX FIFO `GRXFSIZ=0x1000`). The real cause was **not** dwc2 and **not** the
 composite — it was the userspace pump (`uvc_gadget.py` `find_device()`) opening
@@ -19,21 +22,26 @@ full-speed. Once the pump opens the correct node and sets a format, dwc2
 recomputes the FIFO (`GRXFSIZ=0x22e`=558, fits) and the device (re-)enumerates
 high-speed.
 
-With that fixed, the composite enumerates high-speed with **both** functions:
+So when UVC is enabled it works, high-speed, alongside NCM:
 
-- One configfs gadget links **NCM first** (interfaces 0–1) then **UVC**
-  (interfaces 2–3). NCM's bulk-OUT endpoint sizes the RX FIFO small before the
-  UVC iso-IN endpoint, so the FIFO fits the SPRAM from the first bind — no
-  full-speed window, no separate "prime" step, no fallback timer.
-- `rpi-cam-gadget-setup.sh` (no args) builds and binds it; the
+- NCM is linked **first** (interfaces 0–1), UVC second (2–3). NCM's bulk-OUT
+  endpoint sizes the RX FIFO small before the UVC iso-IN endpoint, so the FIFO
+  fits the SPRAM from the first bind — no full-speed window, no "prime" step.
+- `rpi-cam-gadget-setup.sh` (no args) builds and binds; the
   `rpi-cam-gadget.service` oneshot runs it at boot.
 - dwc2 runs in **`dr_mode=otg`** (forced `peripheral` left the HS PHY wedged at
   full-speed on the Zero 2 W; otg does the full bring-up and resolves to
   peripheral when attached).
 
+Per-board capture/UVC **resolutions live in one shared file**,
+`/etc/rpi-camera/frames.conf` (`<model-substring>|WxH:fps,...`), read by BOTH
+this setup script and rpi-camera's web UI — so the gadget descriptors and the
+UI resolution list can never drift. It's a plain file, not configfs, precisely
+because UVC (hence configfs) is off by default.
+
 The earlier UVC⇄NCM mode-switch, the `rpi-cam-gadget-mode.sh` helper, the
 `-fallback` service/timer, and the `/boot/firmware/ncm-mode` flag are all
-**removed** — both functions are always present, so there is nothing to switch.
+**removed**.
 
 ## What this stage ships today
 

@@ -1,15 +1,16 @@
 #!/bin/bash
-# Build the composite USB gadget via configfs/libcomposite: a UVC webcam AND a
-# CDC-NCM network device, in one configuration, presented together.
+# Build the USB gadget via configfs/libcomposite. The product is an IP camera
+# (MJPEG/HTTP over WiFi or USB networking), so the default gadget is CDC-NCM
+# ONLY. The UVC webcam is opt-in (drop 'uvc-enable' on the boot partition) — it
+# works (see below), but its isochronous pump costs too much CPU on the small
+# boards to run when it isn't needed.
 #
-# History: this used to present ONE function at a time because the composite
-# gadget "wouldn't enumerate reliably on dwc2" (it came up full-speed with a
-# dead ep0). That was a misdiagnosis — the real cause was the userspace pump
-# opening the wrong V4L2 node, so the UVC endpoint was never configured and
-# dwc2 kept an oversized RX FIFO that overflowed the SPRAM -> full-speed. With
-# the pump on the right node, the composite enumerates high-speed with both
-# functions (NCM is linked first so its small bulk-OUT FIFO sizes the RX FIFO
-# before the UVC iso-IN endpoint).
+# History: the UVC+NCM composite used to "not enumerate reliably on dwc2" (it
+# came up full-speed with a dead ep0). That was a misdiagnosis — the real cause
+# was the userspace pump opening the wrong V4L2 node, so the UVC endpoint was
+# never configured and dwc2 kept an oversized RX FIFO that overflowed the SPRAM
+# -> full-speed. With the pump on the right node the composite enumerates
+# high-speed; UVC is off by default purely for CPU cost, not stability.
 #
 # Usage: rpi-cam-gadget-setup.sh
 # Re-runnable: it fully tears down any existing gadget first.
@@ -17,6 +18,9 @@ set -eu
 
 GADGET=/sys/kernel/config/usb_gadget/picam
 CONFIGFS=/sys/kernel/config
+# Shared per-board frame set (resolutions + fps), also read by rpi-camera's
+# web UI. The single source of truth for capture/UVC resolutions.
+FRAMES_CONF=/etc/rpi-camera/frames.conf
 
 modprobe libcomposite
 
@@ -108,19 +112,16 @@ build_ncm() {
 # bDeviceClass is left at its default (per-interface) — a plain UVC webcam; the
 # UVC IAD in the config groups VideoControl + VideoStreaming.
 build_uvc() {
-	# Advertised frame sizes (ascending — the order IS the UVC bFrameIndex).
-	# MUST match gadget_frames() in rpi-camera's uvc_gadget.py. The largest
-	# frame is bounded per board to what the hardware can sensibly stream:
-	#   single-core Pi Zero / Zero W -> up to 720p   (1080p too slow over USB UVC)
-	#   Pi Zero 2 W                  -> up to 2304x1296 (IMX708 binned, ~3MP)
-	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
+	# Advertised frame sizes/fps come from the shared per-board config
+	# (FRAMES_CONF, read below) — the SAME file rpi-camera's web UI reads, so
+	# the gadget and the UI can't drift. Ascending order there IS the UVC
+	# bFrameIndex.
 	#
 	# Iso endpoint wMaxPacketSize. 2048 (high-bandwidth iso, 2 transactions per
 	# microframe) is what the host actually negotiates and is verified working
 	# on the Pi Zero 2 W; the earlier "dwc2 can't do high-bandwidth iso, keep
 	# <=1024" claim was a misdiagnosis (the real cause of the bad behaviour was
-	# the pump opening the wrong V4L2 node, not the packet size). Default 2048;
-	# each board tier may override below.
+	# the pump opening the wrong V4L2 node, not the packet size).
 	UVC_MAXPACKET=2048
 
 	UVC=functions/uvc.usb0
@@ -199,48 +200,46 @@ build_uvc() {
 		fi
 	}
 
-	# UVC_INTERVAL is the iso endpoint bInterval: it is serviced every
-	# 2^(bInterval-1) microframes, so it costs ~8000/2^(bInterval-1)
-	# interrupts/sec. bInterval=1 (every microframe, 8000 int/s) buries the
-	# single-core ARMv6 Pi Zero in softirqs even at idle; raise it there.
-	#
-	# The largest frame is bounded per board to what the hardware can stream:
-	#   single-core Pi Zero / Zero W -> up to 720p   (1080p too slow over USB UVC)
-	#   Pi Zero 2 W                  -> up to 2304x1296 (IMX708 binned, ~3MP)
-	#   everything else (Pi 4/5/...) -> up to 4608x2592 (IMX708 full sensor)
+	# Frame set comes from the shared config (FRAMES_CONF), the single source
+	# of truth also read by rpi-camera's web UI — see that file's header. Each
+	# board's advertised resolutions/fps live there, NOT inline here, so the
+	# gadget and the web UI can never drift.
 	MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
-	if echo "${MODEL}" | grep -q 'Zero 2'; then
-		UVC_INTERVAL=1
-		UVC_MAXPACKET=2048   # HB-iso; verified on Zero 2 W (see note above)
-		create_frame  640  480 mjpeg 30 24 20 15 10 5
-		create_frame 1280  720 mjpeg 30 24 20 15 10 5
-		create_frame 1920 1080 mjpeg 24 20 15 10 5
-		create_frame 2304 1296 mjpeg 20 15 10 5   # IMX708 binned full-FoV (~3MP)
-	elif echo "${MODEL}" | grep -q 'Zero'; then
-		# Single-core ARMv6 Zero / Zero W. 1080p over USB UVC is too slow on
-		# one core, so the gadget advertises up to 720p only; 30 fps pins the
-		# core even at 640x480, so cap the rate at 20. NOTE: this limits only
-		# the USB webcam — the HTTP/web stream is NOT constrained by this list
-		# and can still serve 1080p.
-		#
-		# bInterval=3: the iso endpoint is serviced every 2^(3-1)=4 microframes
-		# (~2000/s) instead of every 2 (~4000/s at interval 2). On the single
-		# core, interval 2 drove ~100% system time (dwc2 softirq) and made the
-		# board unresponsive; interval 3 halves that load and is still ample
-		# bandwidth for 720p@20 MJPEG (~1 MB/s).
-		UVC_INTERVAL=3
-		UVC_MAXPACKET=2048
-		create_frame  640  480 mjpeg 20 15 10 5
-		create_frame 1280  720 mjpeg 20 15 10 5
-	else
-		UVC_INTERVAL=1
-		UVC_MAXPACKET=2048   # HB-iso; verified on Zero 2 W (see note above)
-		create_frame  640  480 mjpeg 30 24 20 15 10 5
-		create_frame 1280  720 mjpeg 30 24 20 15 10 5
-		create_frame 1920 1080 mjpeg 30 24 20 15 10 5
-		create_frame 2304 1296 mjpeg 30 24 20 15 10 5
-		create_frame 4608 2592 mjpeg 10 5
+
+	# UVC_INTERVAL is the iso endpoint bInterval: serviced every 2^(bInterval-1)
+	# microframes. The single-core ARMv6 Zero / Zero W needs bInterval=3 (iso
+	# every 4 microframes, ~2000/s) — at 2 it spent ~100% in dwc2 softirq and
+	# wedged the board; 3 halves that and still carries 720p@20 MJPEG. Multi-
+	# core boards run bInterval=1. maxpacket is 2048 (HB-iso) on every tier.
+	case "${MODEL}" in
+		*"Zero 2"*) UVC_INTERVAL=1 ;;
+		*Zero*)     UVC_INTERVAL=3 ;;
+		*)          UVC_INTERVAL=1 ;;
+	esac
+
+	# Read this board's frame specs from the shared config. Each spec is
+	# WxH:fps,fps,... ; the first line whose key is a substring of MODEL wins.
+	specs=""
+	if [ -r "${FRAMES_CONF}" ]; then
+		while IFS='|' read -r key rest; do
+			case "${key}" in ''|'#'*) continue ;; esac
+			if [ "${key}" = '*' ] || [[ "${MODEL}" == *"${key}"* ]]; then
+				specs="${rest}"
+				break
+			fi
+		done < "${FRAMES_CONF}"
 	fi
+	if [ -z "${specs}" ]; then
+		echo "rpi-cam-gadget: no ${FRAMES_CONF} match for '${MODEL}'; using 640x480/720p fallback" >&2
+		specs="640x480:30,24,20,15,10,5|1280x720:30,24,20,15,10,5"
+	fi
+
+	IFS='|' read -ra _frame_specs <<< "${specs}"
+	for spec in "${_frame_specs[@]}"; do
+		res="${spec%%:*}"
+		fps_csv="${spec#*:}"
+		create_frame "${res%x*}" "${res#*x}" mjpeg ${fps_csv//,/ }
+	done
 
 	# Default frame = 1080p where advertised, else 720p, else the first frame.
 	# This matches the camera's per-board boot resolution (rpi-camera
@@ -289,17 +288,31 @@ build_uvc() {
 	echo "rpi-cam-gadget: built UVC gadget, frames [${FRAMES}], default #${default_idx}, streaming_interval=${UVC_INTERVAL}"
 }
 
-# Link NCM first so it claims interfaces 0-1 (and its small bulk-OUT FIFO sizes
-# the dwc2 RX FIFO before the UVC iso-IN endpoint); UVC takes interfaces 2-3.
+# Always present CDC-NCM (interfaces 0-1): the product is an IP camera — it
+# streams MJPEG/HTTP over WiFi or over USB networking, so a network function is
+# all it needs. The UVC webcam is OPT-IN: its isochronous pump costs significant
+# CPU on the small boards and is not needed for the IP-camera use case, so it is
+# OFF by default. Drop a file named 'uvc-enable' on the boot partition to also
+# present the UVC webcam (NCM stays linked first so its small bulk-OUT FIFO sizes
+# the dwc2 RX FIFO before the UVC iso-IN endpoint).
 build_ncm
-build_uvc
+BOOT_FW=/boot/firmware
+[ -d "${BOOT_FW}" ] || BOOT_FW=/boot
+if [ -f "${BOOT_FW}/uvc-enable" ]; then
+	build_uvc
+	GADGET_DESC="UVC+NCM"
+	echo "rpi-cam-gadget: ${BOOT_FW}/uvc-enable present -> adding the UVC webcam"
+else
+	GADGET_DESC="NCM"
+	echo "rpi-cam-gadget: UVC webcam disabled (drop ${BOOT_FW}/uvc-enable to enable it)"
+fi
 
-# Bind the gadget to the UDC. The /dev/videoN (UVC) and usb0 (NCM) nodes appear
-# once this completes.
+# Bind the gadget to the UDC. The usb0 (NCM) and, if enabled, /dev/videoN (UVC)
+# nodes appear once this completes.
 udc="$(ls /sys/class/udc | head -n1)"
 if [ -z "${udc}" ]; then
 	echo "rpi-cam-gadget: no UDC available (is dwc2 in peripheral mode?)" >&2
 	exit 1
 fi
 echo "${udc}" > UDC
-echo "rpi-cam-gadget: bound composite (UVC+NCM) gadget to UDC ${udc}"
+echo "rpi-cam-gadget: bound ${GADGET_DESC} gadget to UDC ${udc}"
