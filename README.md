@@ -26,7 +26,7 @@ every Pi from the **Zero W** up to the **Pi 4** — including the **Zero 2 W** a
 | 🌐 **IP camera over WiFi** | Reach the stream and web UI from any browser on your network. |
 | 🔌 **USB gadget (OTG boards)** | Plug the Pi into a host over USB; it appears as a network device (CDC-NCM). A UVC webcam function is opt-in (drop `uvc-enable` on the boot partition). |
 | 🪟 **Captive portal on USB** | On connect, the host's OS connectivity check is hijacked to the Pi, so the webcam UI pops up automatically (Windows/macOS/Linux). |
-| 🩺 **WiFi & frame watchdogs** | Auto-reboot if the WiFi radio wedges; restart/reboot if the camera stops delivering frames. Toggleable from the web UI. |
+| 🩺 **WiFi & frame watchdogs** | A frame-stall watchdog restarts the service (then reboots) if the camera stops delivering frames — always on. A WiFi safety watchdog reboots if the radio wedges — toggle it in the web UI's **System** section ("Reboot on WiFi loss"), off by default. |
 | ⬆️ **In-place updater** | An "Update" button (or SSH) upgrades the camera package and refreshes the gadget files from the latest release, then restarts the service. |
 | ☁️ **First-boot customization** | WiFi, SSH, user, hostname, locale, etc. are applied on first boot via Raspberry Pi Imager's wizard (cloud-init). |
 | 🔒 **Hardened by default** | Headless, no default user/password, locked-down `sudoers` for each privileged helper. |
