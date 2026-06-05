@@ -10,6 +10,9 @@
 
 install -m 755 files/usr/local/sbin/reboot_on_wifi_disconnect.sh \
 	"${ROOTFS_DIR}/usr/local/sbin/reboot_on_wifi_disconnect.sh"
+# Helper the web UI calls (via sudo) to set the watchdog's ping target.
+install -m 755 files/usr/local/sbin/rpi-cam-wifi-watchdog-config.sh \
+	"${ROOTFS_DIR}/usr/local/sbin/rpi-cam-wifi-watchdog-config.sh"
 install -m 644 files/etc/systemd/system/reboot_on_wifi_disconnect.service \
 	"${ROOTFS_DIR}/etc/systemd/system/reboot_on_wifi_disconnect.service"
 

@@ -15,6 +15,9 @@ Environment=WIFI_IFACE=wlan0
 Environment=GATEWAY=10.42.0.1
 Environment=PING_FAILURES_BEFORE_REBOOT=30
 Environment=INITIAL_ASSOCIATION_TIMEOUT=120
+# Optional overrides written from the web UI (e.g. PING_TARGET=<ip>). Listed
+# after Environment= so the file wins; the leading '-' makes it optional.
+EnvironmentFile=-/etc/rpi-camera/wifi-watchdog.conf
 
 [Install]
 WantedBy=multi-user.target

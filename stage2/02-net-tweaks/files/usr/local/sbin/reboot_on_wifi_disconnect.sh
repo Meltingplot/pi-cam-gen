@@ -7,11 +7,16 @@
 # (see /etc/sudoers.d/rpi-camera-wifi-watchdog). A system reboot service
 # belongs in the image, not in the Python camera package.
 #
-# Config comes from the systemd unit's Environment= lines.
+# Config comes from the systemd unit's Environment= lines, overlaid by the
+# optional EnvironmentFile /etc/rpi-camera/wifi-watchdog.conf (written from the
+# web UI via rpi-cam-wifi-watchdog-config.sh).
 set -u
 
 WIFI_IFACE="${WIFI_IFACE:-wlan0}"
 GATEWAY="${GATEWAY:-10.42.0.1}"
+# Manual ping target set from the web UI. Empty (the default) means auto-detect
+# the live default route; a non-empty value pins the host the watchdog pings.
+PING_TARGET="${PING_TARGET:-}"
 PING_FAILURES_BEFORE_REBOOT="${PING_FAILURES_BEFORE_REBOOT:-30}"
 INITIAL_ASSOCIATION_TIMEOUT="${INITIAL_ASSOCIATION_TIMEOUT:-120}"
 
@@ -20,10 +25,15 @@ check_wlan_connected() {
 	iw dev "${WIFI_IFACE}" link 2>/dev/null | grep -q "Connected"
 }
 
-# Prefer the live default route (works on DHCP networks too); fall back to the
-# configured GATEWAY so an old static setup never silently breaks.
+# A manual PING_TARGET (set from the web UI) wins outright. Otherwise prefer the
+# live default route (works on DHCP networks too); fall back to the configured
+# GATEWAY so an old static setup never silently breaks.
 current_gateway() {
 	local gw
+	if [ -n "${PING_TARGET}" ]; then
+		echo "${PING_TARGET}"
+		return
+	fi
 	gw="$(ip route show default dev "${WIFI_IFACE}" 2>/dev/null | awk '/^default/ {print $3; exit}')"
 	[ -n "${gw}" ] || gw="$(ip route show default 2>/dev/null | awk '/^default/ {print $3; exit}')"
 	[ -n "${gw}" ] || gw="${GATEWAY}"
