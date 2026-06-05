@@ -1,0 +1,8 @@
+# Let the rpi-camera service user launch the in-place updater from the web UI.
+# The endpoint is gated server-side to the USB-ethernet network (10.55.0.x);
+# systemd-run puts the updater in its own transient unit so it survives the
+# rpi-camera restart the update performs (journalctl -u rpi-cam-update).
+# Pinned to exactly this command — grants nothing else. Over SSH an admin just
+# runs `sudo /usr/local/sbin/rpi-cam-update.sh` with their own sudo rights.
+# FIRST_USER_NAME is substituted at image build time (00-run.sh).
+FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemd-run --collect --unit=rpi-cam-update /usr/local/sbin/rpi-cam-update.sh
