@@ -56,6 +56,32 @@ The earlier UVC⇄NCM mode-switch, the `rpi-cam-gadget-mode.sh` helper, the
   Zero 2 W, 4608×2592 on Pi 4/5), each with its full advertised fps list, at
   iso `streaming_maxpacket=2048` (high-bandwidth iso), then binds the UDC.
 - NetworkManager `usb0-host.nmconnection` (`method=shared`, 10.55.0.1/24).
+- NetworkManager `usb0-uplink.nmconnection`: a **macvlan child of usb0**
+  (`usb0u`, bridge mode — `mode=2` in the keyfile) running a plain DHCP client. usb0 itself stays the
+  captive-portal server (above); this child only ever talks to the external
+  host. So out of the box the Pi serves the host (captive portal), and the
+  moment the host enables internet sharing (Windows ICS → 192.168.137.x;
+  no clash with 10.55.0.0/24) the child gets a lease + default route + DNS and
+  the **Pi gains internet over USB** — e.g. so the USB-gated "Update software"
+  button can actually reach PyPI/GitHub without WiFi.
+  - Why macvlan and not a second address on usb0: NM can't run `method=shared`
+    (server) and `method=auto` (client) on one connection, and two DHCP roles
+    on one stack race. A macvlan child is a separate netdev/MAC, and **macvlan
+    parent↔child isolation** means usb0's dnsmasq never sees the child's
+    DISCOVER, so it can't self-lease — no authoritative/MAC-ignore tuning
+    needed. Bridging the two would re-merge the L2 segment and reintroduce the
+    conflict; macvlan keeps them separate.
+  - `route-metric=800` (fallback): WiFi/Ethernet stay preferred when they have a
+    route; the USB uplink carries traffic only when nothing better exists.
+  - In ICS mode 10.55.0.1 is unreachable from the host (it's now on
+    192.168.137.0/24, no route to 10.55.0.0/24). The child therefore also
+    carries a FIXED second address `192.168.137.250/24` (Windows ICS is always
+    192.168.137.1/24), so the UI is reachable at a predictable
+    `http://192.168.137.250` without relying on the DHCP lease or mDNS (Windows
+    frequently can't resolve `<hostname>.local` over the ICS NIC). The
+    captive-portal auto-popup won't fire in ICS mode either, because the host's
+    own uplink answers its connectivity checks — expected.
+  - On a non-OTG board (no `usb0`) NM can't activate the child; it stays idle.
 - A locked-down `rpi-cam-gadget-rebind.sh` + sudoers entry for the pump to
   re-bind the UDC on a descriptor change (unused by the current fixed-descriptor
   negotiation path).

@@ -26,7 +26,8 @@ every Pi from the **Zero W** up to the **Pi 4** — including the **Zero 2 W** a
 | 🌐 **IP camera over WiFi** | Reach the stream and web UI from any browser on your network. |
 | 🔌 **USB gadget (OTG boards)** | Plug the Pi into a host over USB; it appears as a network device (CDC-NCM). A UVC webcam function is opt-in (drop `uvc-enable` on the boot partition). |
 | 🪟 **Captive portal on USB** | On connect, the host's OS connectivity check is hijacked to the Pi, so the webcam UI pops up automatically (Windows/macOS/Linux). |
-| 🩺 **WiFi & frame watchdogs** | A frame-stall watchdog restarts the service (then reboots) if the camera stops delivering frames — always on. A WiFi safety watchdog reboots if the radio wedges — toggle it in the web UI's **System** section ("Reboot on WiFi loss"), off by default. |
+| 🛜 **Internet over USB** | If the host turns on internet sharing (Windows ICS etc.), the Pi automatically picks up an uplink over the same USB cable — so it can update with no WiFi. WiFi stays preferred; USB is a fallback. The captive-portal server keeps running alongside it. |
+| 🩺 **WiFi & frame watchdogs** | A frame-stall watchdog restarts the service (then reboots) if the camera stops delivering frames — always on. A WiFi safety watchdog reboots if the radio wedges — toggle it in the web UI's **System** section ("Reboot on WiFi loss"), with an optional manual **ping target**; off by default. |
 | ⬆️ **In-place updater** | An "Update" button (or SSH) upgrades the camera package and refreshes the gadget files from the latest release, then restarts the service. |
 | ☁️ **First-boot customization** | WiFi, SSH, user, hostname, locale, etc. are applied on first boot via Raspberry Pi Imager's wizard (cloud-init). |
 | 🔒 **Hardened by default** | Headless, no default user/password, locked-down `sudoers` for each privileged helper. |
@@ -66,6 +67,16 @@ Plug the Pi's USB **data** port into your computer. It enumerates as a USB
 network device and serves DHCP on `10.55.0.1`. Your OS's connectivity check is
 redirected to the Pi, so the **webcam UI opens automatically** — no IP to type.
 
+**Give the Pi internet over USB (optional).** Turn on your host's internet
+sharing for that USB network adapter (Windows: *Internet Connection Sharing*;
+macOS: *Internet Sharing*; Linux: NetworkManager "shared"). The Pi picks up the
+shared connection automatically over the same cable — handy for updating a unit
+that has no WiFi. WiFi stays the preferred route; USB is only used when there's
+nothing better. With Windows ICS the Pi is then reachable at a fixed
+**`http://192.168.137.250`** (ICS moves the host to the `192.168.137.x` range,
+so `10.55.0.1` no longer applies; `<hostname>.local` works too where the host
+resolves mDNS).
+
 To also expose a **USB webcam (UVC)** device — so apps like a video-conferencing
 client see it as a regular camera — create an empty file named `uvc-enable` on
 the boot (FAT) partition and reboot. It's off by default because the UVC pump is
@@ -103,7 +114,7 @@ stages (3–5) from upstream pi-gen are not built.
 | [stage0/](stage0/) | Bootstrap — debootstrap, apt sources, firmware. |
 | [stage1/](stage1/) | Minimal bootable system — boot files, `dwc2`/`libcomposite` for USB gadget, fstab, networking. |
 | [stage2/05-rpi-camera/](stage2/05-rpi-camera/) | Installs `meltingplot.rpi_camera` into a venv, its systemd service, watchdog + updater sudoers. |
-| [stage2/06-usb-gadget/](stage2/06-usb-gadget/) | Composite USB gadget (CDC-NCM + optional UVC), captive portal, `usb0` NetworkManager profile. See [NOTES.md](stage2/06-usb-gadget/NOTES.md). |
+| [stage2/06-usb-gadget/](stage2/06-usb-gadget/) | Composite USB gadget (CDC-NCM + optional UVC), captive portal, `usb0` NetworkManager profile, plus a macvlan **uplink** that takes the host's shared internet. See [NOTES.md](stage2/06-usb-gadget/NOTES.md). |
 | [stage2/02-net-tweaks/](stage2/02-net-tweaks/) | WiFi safety watchdog (reboot on radio wedge). |
 | [stage2/04-cloud-init/](stage2/04-cloud-init/) | cloud-init for Imager's first-boot customization. |
 | [export-image/](export-image/) | Image finalization — first-user rename, sources, PARTUUID. |

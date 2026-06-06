@@ -21,6 +21,11 @@ install -m 644 files/etc/rpi-camera/frames.conf "${ROOTFS_DIR}/etc/rpi-camera/fr
 install -d -m 700 "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
 install -m 600 files/etc/NetworkManager/system-connections/usb0-host.nmconnection \
 	"${ROOTFS_DIR}/etc/NetworkManager/system-connections/"
+# usb0-uplink: macvlan DHCP-client child of usb0 that picks up the host's shared
+# internet (e.g. Windows ICS) when offered, so the Pi can reach the internet
+# over USB without disturbing the captive-portal server on usb0 itself.
+install -m 600 files/etc/NetworkManager/system-connections/usb0-uplink.nmconnection \
+	"${ROOTFS_DIR}/etc/NetworkManager/system-connections/"
 
 # conf.d drop-in: force NM to MANAGE usb0 (some defaults leave the gadget
 # interface unmanaged, so the usb0-host profile never activates).

@@ -1,0 +1,46 @@
+[connection]
+id=usb0-uplink
+type=macvlan
+interface-name=usb0u
+autoconnect=true
+autoconnect-priority=5
+
+# A macvlan child of the gadget interface usb0. The parent usb0 keeps its
+# static 10.55.0.1 + captive-portal dnsmasq (usb0-host.nmconnection); this
+# child is a plain DHCP CLIENT. So the Pi serves the host out of the box AND,
+# the moment the host turns on internet sharing (Windows ICS hands out
+# 192.168.137.x, macOS/Linux similar), this child picks up a lease + default
+# route + DNS and the Pi gains internet over USB — no host-side IP clash with
+# 10.55.0.0/24, no mode switch.
+#
+# macvlan parent<->child isolation is what makes this safe: the child can reach
+# the external host but NOT the parent, so usb0's dnsmasq never sees this
+# child's DISCOVER and can't lease to it. On a non-OTG board (no usb0) NM simply
+# can't activate this and it stays idle.
+[macvlan]
+parent=usb0
+# NM keyfile stores the mode as an integer enum: 2 = bridge (1=vepa, 3=private,
+# 4=passthru, 5=source). The string "bridge" is only accepted via nmcli.
+mode=2
+tap=false
+
+[ipv4]
+method=auto
+# Never block anything: if the host isn't sharing, there's no DHCP server and
+# this just stays unconfigured and retries.
+may-fail=true
+# Fixed second address in the Windows-ICS subnet (ICS is ALWAYS 192.168.137.1/24)
+# IN ADDITION to the DHCP lease, so the UI is reachable at a predictable
+# http://192.168.137.250 without mDNS (Windows often can't resolve <host>.local
+# over the ICS NIC). High host part to stay clear of the ICS DHCP pool. Harmless
+# on non-Windows hosts (just an unreachable extra IP); DHCP still provides the
+# real gateway/DNS/internet.
+address1=192.168.137.250/24
+# Fallback only: keep WiFi/Ethernet preferred when they have a route. A high
+# metric means the USB uplink's default route is used only when nothing better
+# exists (e.g. no WiFi internet) — exactly the update-over-USB case.
+route-metric=800
+dns-priority=200
+
+[ipv6]
+method=ignore
