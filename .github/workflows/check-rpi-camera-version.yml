@@ -2,7 +2,7 @@ name: Check for rpi-camera release
 
 on:
   schedule:
-    - cron: '17 * * * *'  # hourly, offset to avoid the on-the-hour rush
+    - cron: '17 6 1,15 * *'  # ~biweekly: 1st and 15th of each month (~14 days apart)
   workflow_dispatch:
 
 permissions:

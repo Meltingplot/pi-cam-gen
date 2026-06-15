@@ -111,6 +111,7 @@ jobs:
           name: ${{ steps.copies.outputs.base }}-armhf
           path: artifacts/*-armhf.img.xz*
           if-no-files-found: error
+          retention-days: 16  # survive one ~14-day check cycle, then auto-expire
 
       # ---- Release publishing (tag pushes only) ----------------------------
 
