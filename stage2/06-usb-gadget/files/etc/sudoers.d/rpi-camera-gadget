@@ -2,5 +2,6 @@
 # nothing else. Resolution/fps are negotiated by the USB host over UVC, so no
 # descriptor-rewrite helper is needed. The helper whitelists its arguments
 # (bind|unbind), so this does not grant a general root shell.
-# FIRST_USER_NAME is substituted at image build time (stage2/06-usb-gadget/00-run.sh).
-FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-gadget-rebind.sh bind, /usr/local/sbin/rpi-cam-gadget-rebind.sh unbind
+# Granted to UID 1000 (#1000), not a username: the service runs as User=1000 and
+# the first-boot user rename keeps UID 1000, so a name-based rule would go stale.
+#1000 ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-gadget-rebind.sh bind, /usr/local/sbin/rpi-cam-gadget-rebind.sh unbind

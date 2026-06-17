@@ -2,10 +2,12 @@
 # the web UI without a password. Pinned to exact argv (enable/disable --now of
 # that one unit), so it grants nothing else — no general root shell, no other
 # units. `systemctl is-enabled/is-active` are read-only and need no sudo.
-# FIRST_USER_NAME is substituted at image build time (02-run.sh).
-FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemctl enable --now reboot_on_wifi_disconnect.service, /usr/bin/systemctl disable --now reboot_on_wifi_disconnect.service
+# Granted to UID 1000 (#1000), not a username: the service runs as User=1000
+# and the first-boot user rename keeps UID 1000, so a name-based rule would go
+# stale when `pi` is renamed.
+#1000 ALL=(root) NOPASSWD: /usr/bin/systemctl enable --now reboot_on_wifi_disconnect.service, /usr/bin/systemctl disable --now reboot_on_wifi_disconnect.service
 
 # Let the web UI set the watchdog's ping target. The wildcard covers the
 # variable IP argument; the helper itself is root-owned, validates its input and
 # only writes the one EnvironmentFile, so it grants nothing beyond that.
-FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-wifi-watchdog-config.sh set-ping-target *
+#1000 ALL=(root) NOPASSWD: /usr/local/sbin/rpi-cam-wifi-watchdog-config.sh set-ping-target *

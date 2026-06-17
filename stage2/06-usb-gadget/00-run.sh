@@ -45,9 +45,9 @@ install -d -m 755 "${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d"
 install -m 644 files/etc/systemd/system/NetworkManager.service.d/10-dnsmasq-chown.conf \
 	"${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d/"
 
-# sudoers: substitute the real first-user name, then install 0440 root:root.
+# sudoers: install 0440 root:root. Pinned to UID 1000 (#1000) = the service's
+# User=, so it survives the first-boot user rename — no name substitution.
 install -m 0440 files/etc/sudoers.d/rpi-camera-gadget "${ROOTFS_DIR}/etc/sudoers.d/rpi-camera-gadget"
-sed -i "s/FIRST_USER_NAME/${FIRST_USER_NAME}/g" "${ROOTFS_DIR}/etc/sudoers.d/rpi-camera-gadget"
 
 # Validate the sudoers file inside the chroot so a typo fails the build
 # instead of silently disabling sudo on the device.

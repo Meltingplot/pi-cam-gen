@@ -5,5 +5,6 @@
 # argv, so this grants nothing else (no general root shell, no other units).
 # Without this the watchdog falls back to the distro's blanket NOPASSWD, which
 # a hardened image may not have.
-# FIRST_USER_NAME is substituted at image build time (stage2/05-rpi-camera/00-run.sh).
-FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemctl restart rpi-camera.service, /usr/sbin/reboot
+# Granted to UID 1000 (#1000), not a username: the service runs as User=1000 and
+# the first-boot user rename keeps UID 1000, so a name-based rule would go stale.
+#1000 ALL=(root) NOPASSWD: /usr/bin/systemctl restart rpi-camera.service, /usr/sbin/reboot

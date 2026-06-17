@@ -16,10 +16,10 @@ install -m 755 files/usr/local/sbin/rpi-cam-wifi-watchdog-config.sh \
 install -m 644 files/etc/systemd/system/reboot_on_wifi_disconnect.service \
 	"${ROOTFS_DIR}/etc/systemd/system/reboot_on_wifi_disconnect.service"
 
-# sudoers: substitute the real first-user name, then install 0440 root:root.
+# sudoers: install 0440 root:root. Pinned to UID 1000 (#1000) = the service's
+# User=, so it survives the first-boot user rename — no name substitution.
 install -m 0440 files/etc/sudoers.d/rpi-camera-wifi-watchdog \
 	"${ROOTFS_DIR}/etc/sudoers.d/rpi-camera-wifi-watchdog"
-sed -i "s/FIRST_USER_NAME/${FIRST_USER_NAME}/g" "${ROOTFS_DIR}/etc/sudoers.d/rpi-camera-wifi-watchdog"
 
 # Validate the sudoers file inside the chroot so a typo fails the build instead
 # of silently disabling sudo on the device. Intentionally NOT enabled here.

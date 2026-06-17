@@ -12,10 +12,11 @@
 # pi-cam-gen release, then rebuilds the gadget and restarts the service.
 install -m 755 files/usr/local/sbin/rpi-cam-update.sh "${ROOTFS_DIR}/usr/local/sbin/rpi-cam-update.sh"
 
-# sudoers: substitute the real first-user name, then install 0440 root:root.
+# sudoers: install 0440 root:root. The rules are pinned to UID 1000 (#1000),
+# the service's User=, so they survive the first-boot user rename — no name
+# substitution needed.
 for f in rpi-camera-watchdog rpi-camera-update; do
 	install -m 0440 "files/etc/sudoers.d/${f}" "${ROOTFS_DIR}/etc/sudoers.d/${f}"
-	sed -i "s/FIRST_USER_NAME/${FIRST_USER_NAME}/g" "${ROOTFS_DIR}/etc/sudoers.d/${f}"
 done
 
 # Validate inside the chroot so a typo fails the build instead of silently

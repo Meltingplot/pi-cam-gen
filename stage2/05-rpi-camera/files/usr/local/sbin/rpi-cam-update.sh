@@ -25,6 +25,12 @@ log() { echo "rpi-cam-update: $*"; }
 # --- 1. Upgrade rpi-camera (Repo B) from PyPI, stable only -------------------
 svc_user="$(systemctl show -p User --value rpi-camera.service 2>/dev/null || true)"
 [ -n "${svc_user}" ] || svc_user="pi"
+# The unit pins User= to the numeric UID (1000) so it survives the first-boot
+# user rename; runuser needs a NAME, so resolve a numeric value back to one.
+case "${svc_user}" in
+	'' | *[!0-9]*) : ;;  # already a name
+	*) svc_user="$(id -un "${svc_user}" 2>/dev/null || echo pi)" ;;
+esac
 if [ -x "${VENV}/bin/pip" ]; then
 	log "pip: upgrading meltingplot.rpi_camera from PyPI (stable)"
 	runuser -u "${svc_user}" -- "${VENV}/bin/pip" install --upgrade meltingplot.rpi_camera \
@@ -67,10 +73,9 @@ if [ -n "${tag}" ]; then
 	if curl -fsSL "${wdsrc}/usr/local/sbin/reboot_on_wifi_disconnect.sh"   -o "${tmp}/watchdog.sh" \
 		&& curl -fsSL "${wdsrc}/usr/local/sbin/rpi-cam-wifi-watchdog-config.sh" -o "${tmp}/config.sh" \
 		&& curl -fsSL "${wdsrc}/etc/systemd/system/reboot_on_wifi_disconnect.service" -o "${tmp}/watchdog.service" \
-		&& curl -fsSL "${wdsrc}/etc/sudoers.d/rpi-camera-wifi-watchdog" -o "${tmp}/sudoers.in" \
+		&& curl -fsSL "${wdsrc}/etc/sudoers.d/rpi-camera-wifi-watchdog" -o "${tmp}/sudoers" \
 		&& bash -n "${tmp}/watchdog.sh" \
 		&& bash -n "${tmp}/config.sh" \
-		&& sed "s/FIRST_USER_NAME/${svc_user}/g" "${tmp}/sudoers.in" > "${tmp}/sudoers" \
 		&& visudo -cf "${tmp}/sudoers" >/dev/null; then
 		install -m 755 "${tmp}/watchdog.sh"      /usr/local/sbin/reboot_on_wifi_disconnect.sh
 		install -m 755 "${tmp}/config.sh"        /usr/local/sbin/rpi-cam-wifi-watchdog-config.sh

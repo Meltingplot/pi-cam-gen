@@ -4,5 +4,6 @@
 # rpi-camera restart the update performs (journalctl -u rpi-cam-update).
 # Pinned to exactly this command — grants nothing else. Over SSH an admin just
 # runs `sudo /usr/local/sbin/rpi-cam-update.sh` with their own sudo rights.
-# FIRST_USER_NAME is substituted at image build time (00-run.sh).
-FIRST_USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemd-run --collect --unit=rpi-cam-update /usr/local/sbin/rpi-cam-update.sh
+# Granted to UID 1000 (#1000), not a username: the service runs as User=1000 and
+# the first-boot user rename keeps UID 1000, so a name-based rule would go stale.
+#1000 ALL=(root) NOPASSWD: /usr/bin/systemd-run --collect --unit=rpi-cam-update /usr/local/sbin/rpi-cam-update.sh
